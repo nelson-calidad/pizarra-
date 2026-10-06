@@ -116,7 +116,7 @@ const fromSheet = (n: any): Note => ({
 export default function App() {
   const [notes, setNotes] = useState<Note[]>(() => JSON.parse(localStorage.getItem('mi-tablero-notes') || 'null') ?? seed)
   const [view, setView] = useState<View>('board')
-  const [filter, setFilter] = useState('Todos')
+  const [filter, setFilter] = useState('Pendientes')
   const [selected, setSelected] = useState<Note | null>(null)
   const [composer, setComposer] = useState(false)
   const [palette, setPalette] = useState(false)
@@ -195,10 +195,12 @@ export default function App() {
             : filter === 'Vencidos'
             ? overdue(n)
             : filter === 'Fijadas'
-            ? n.pinned
+            ? n.pinned && n.status === 'PENDIENTE'
             : filter === 'Hechos'
             ? n.status === 'HECHO'
-            : n.status !== 'ARCHIVADO'
+            : filter === 'Todos'
+            ? n.status !== 'ARCHIVADO'
+            : n.status === 'PENDIENTE'
         )
         .filter(n => !query || `${n.text} ${n.category}`.toLowerCase().includes(query.toLowerCase())),
     [notes, filter, query]
@@ -347,11 +349,11 @@ export default function App() {
 
 function Board({ notes, filter, setFilter, counts, update, select, boardRef }: any) {
   const filterList = [
-    { key: 'Todos', count: counts[0] },
     { key: 'Pendientes', count: counts[1] },
     { key: 'Hoy', count: counts[2] },
     { key: 'Vencidos', count: counts[3] },
     { key: 'Fijadas', count: counts[4] },
+    { key: 'Todos', count: counts[0] },
     { key: 'Hechos', count: counts[5] }
   ]
 

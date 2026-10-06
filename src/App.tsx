@@ -1,38 +1,857 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  LayoutDashboard,
+  Sun,
+  CheckCircle2,
+  CalendarDays,
+  CheckCheck,
+  Search,
+  Plus,
+  Pin,
+  Clock,
+  MoreHorizontal,
+  RotateCcw,
+  Check,
+  Settings,
+  X,
+  AlertCircle
+} from 'lucide-react'
 import './App.css'
 
 type Status = 'PENDIENTE' | 'HECHO' | 'ARCHIVADO'
 type View = 'board' | 'today' | 'reminders' | 'calendar' | 'done'
-type Note = { id:string;text:string;description?:string;status:Status;date?:string;time?:string;category:string;priority:string;color:string;pinned:boolean;x:number;y:number;width:number;height:number;createdAt:string;completedAt?:string }
-const today=new Date().toISOString().slice(0,10), tomorrow=new Date(Date.now()+864e5).toISOString().slice(0,10), yesterday=new Date(Date.now()-864e5).toISOString().slice(0,10)
-const seed:Note[]=[
-{id:'1',text:'Revisar resultados SSI',status:'PENDIENTE',date:today,time:'15:00',category:'Ventas',priority:'ALTA',color:'yellow',pinned:true,x:100,y:95,width:255,height:150,createdAt:today},
-{id:'2',text:'Validar tiempos de gestoría',status:'PENDIENTE',date:today,category:'Calidad',priority:'NORMAL',color:'blue',pinned:false,x:440,y:210,width:255,height:145,createdAt:today},
-{id:'3',text:'Hablar con Marcelo por reclamo',status:'PENDIENTE',date:yesterday,category:'Postventa',priority:'URGENTE',color:'rose',pinned:false,x:750,y:100,width:260,height:155,createdAt:yesterday},
-{id:'4',text:'IDEA: mejorar mapa de procesos',status:'PENDIENTE',category:'Ideas',priority:'BAJA',color:'violet',pinned:false,x:240,y:455,width:260,height:144,createdAt:today},
-{id:'5',text:'Actualizar procedimiento',status:'HECHO',date:today,category:'Calidad',priority:'NORMAL',color:'green',pinned:false,x:635,y:425,width:250,height:145,createdAt:today,completedAt:today}]
-const overdue=(n:Note)=>n.status==='PENDIENTE'&&!!n.date&&n.date<today
-const label=(d?:string)=>!d?'Sin fecha':d===today?'Hoy':d===tomorrow?'Mañana':new Intl.DateTimeFormat('es-AR',{day:'numeric',month:'short'}).format(new Date(d+'T12:00:00'))
-const apiUrl=import.meta.env.VITE_GOOGLE_SCRIPT_URL as string|undefined
-const remote=(action:string,id?:string,data?:unknown)=>!apiUrl?Promise.resolve():fetch(apiUrl,{method:'POST',body:JSON.stringify({action,id,data})}).then(r=>r.json()).then(r=>{if(!r.success)throw Error(r.error||'Error de sincronización')})
-const toSheet=(n:Partial<Note>)=>Object.fromEntries(Object.entries(n).map(([k,v])=>[{id:'ID',text:'TEXTO',description:'DESCRIPCION',status:'ESTADO',date:'FECHA',time:'HORA',category:'CATEGORIA',priority:'PRIORIDAD',color:'COLOR',pinned:'FIJADA',x:'X',y:'Y',width:'ANCHO',height:'ALTO',createdAt:'CREADO_EN',completedAt:'COMPLETADO_EN'}[k]||k.toUpperCase(),v]))
-const fromSheet=(n:any):Note=>({id:n.ID,text:n.TEXTO||'',description:n.DESCRIPCION||'',status:n.ESTADO||'PENDIENTE',date:n.FECHA||undefined,time:n.HORA||undefined,category:n.CATEGORIA||'General',priority:n.PRIORIDAD||'NORMAL',color:n.COLOR||'yellow',pinned:n.FIJADA===true||n.FIJADA==='TRUE',x:Number(n.X)||120,y:Number(n.Y)||120,width:Number(n.ANCHO)||255,height:Number(n.ALTO)||145,createdAt:n.CREADO_EN||new Date().toISOString(),completedAt:n.COMPLETADO_EN||undefined})
-
-export default function App(){
- const [notes,setNotes]=useState<Note[]>(()=>JSON.parse(localStorage.getItem('mi-tablero-notes')||'null')??seed),[view,setView]=useState<View>('board'),[filter,setFilter]=useState('Todos'),[selected,setSelected]=useState<Note|null>(null),[composer,setComposer]=useState(false),[palette,setPalette]=useState(false),[query,setQuery]=useState('');const board=useRef<HTMLDivElement>(null)
- useEffect(()=>localStorage.setItem('mi-tablero-notes',JSON.stringify(notes)),[notes]);useEffect(()=>{if(apiUrl)fetch(`${apiUrl}?action=getNotes`).then(r=>r.json()).then(r=>r.success&&setNotes(r.data.map(fromSheet))).catch(()=>console.warn('No se pudo cargar Google Sheets; se usa el cache local'))},[]);useEffect(()=>{const f=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();setComposer(true)}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setPalette(true)}if(e.key==='Escape'){setSelected(null);setPalette(false);setComposer(false)}};addEventListener('keydown',f);return()=>removeEventListener('keydown',f)},[])
- const update=(id:string,data:Partial<Note>)=>{setNotes(x=>x.map(n=>n.id===id?{...n,...data}:n));void remote('updateNote',id,toSheet(data)).catch(()=>console.warn('Error de sincronización'))};const create=(text:string,date?:string)=>{if(!text.trim())return;const r=board.current?.getBoundingClientRect();const n:Note={id:crypto.randomUUID(),text:text.trim(),status:'PENDIENTE',date,category:'General',priority:'NORMAL',color:'yellow',pinned:false,x:Math.max(70,(r?.width||800)/2-120),y:Math.max(70,(r?.height||600)/2-70),width:255,height:145,createdAt:new Date().toISOString()};setNotes(x=>[...x,n]);void remote('createNote',undefined,toSheet(n)).catch(()=>console.warn('Error de sincronización'));setComposer(false);setSelected(n)}
- const pending=notes.filter(n=>n.status==='PENDIENTE');const shown=useMemo(()=>notes.filter(n=>filter==='Pendientes'?n.status==='PENDIENTE':filter==='Hoy'?n.status==='PENDIENTE'&&n.date===today:filter==='Vencidos'?overdue(n):filter==='Fijadas'?n.pinned:filter==='Hechos'?n.status==='HECHO':n.status!=='ARCHIVADO').filter(n=>!query||(`${n.text} ${n.category}`).toLowerCase().includes(query.toLowerCase())),[notes,filter,query])
- const nav:[[View,string,string],...any[]]=[['board','▦','Pizarrón'],['today','☀','Mi día'],['reminders','✓','Recordatorios'],['calendar','□','Calendario'],['done','↻','Hechos']]
- return <div className="app"><aside className="sidebar"><div className="brand"><b>M</b><span>Mi Tablero</span></div><nav>{nav.map(([v,i,t])=><button className={view===v?'active':''} onClick={()=>setView(v)} key={v}><i>{i}</i>{t}{v==='reminders'&&<em>{pending.length}</em>}</button>)}</nav><small className="sect">CATEGORÍAS</small>{['General','Calidad','Ventas','Postventa','Personal','Ideas'].map(c=><button className="cat" onClick={()=>{setView('board');setQuery(c)}} key={c}><span/> {c}</button>)}<footer>⚙ Configuración<br/><small>✓ Guardado</small></footer></aside><main><header><button className="search" onClick={()=>setPalette(true)}>⌕ <span>Buscar notas, comandos…</span><kbd>Ctrl K</kbd></button><button className="new" onClick={()=>setComposer(true)}>＋ Nueva nota</button></header>
- {view==='board'&&<Board notes={shown} filter={filter} setFilter={setFilter} counts={[pending.length,pending.filter(n=>n.date===today).length,pending.filter(overdue).length]} update={update} select={setSelected} boardRef={board}/>} {view==='today'&&<List title="Mi día" subtitle="Lo que merece tu atención ahora." notes={pending.filter(n=>overdue(n)||n.date===today)} update={update} select={setSelected} grouped/>}{view==='reminders'&&<Reminders notes={pending} update={update} select={setSelected}/>} {view==='done'&&<List title="Hechos" subtitle="Todo lo que ya resolviste." notes={notes.filter(n=>n.status==='HECHO')} update={update} select={setSelected}/>} {view==='calendar'&&<Calendar notes={notes} select={setSelected}/>}</main>{composer&&<Composer close={()=>setComposer(false)} create={create}/>} {palette&&<Palette notes={notes} close={()=>setPalette(false)} select={setSelected} go={(v:View)=>{setView(v);setPalette(false)}}/>}{selected&&<Detail note={notes.find(n=>n.id===selected.id)||selected} update={update} close={()=>setSelected(null)}/>}</div>
+type Note = {
+  id: string
+  text: string
+  description?: string
+  status: Status
+  date?: string
+  time?: string
+  category: string
+  priority: string
+  color: string
+  pinned: boolean
+  x: number
+  y: number
+  width: number
+  height: number
+  createdAt: string
+  completedAt?: string
 }
-const Board=({notes,filter,setFilter,counts,update,select,boardRef}:any)=><section className="board-page"><div className="toolbar">{['Todos','Pendientes','Hoy','Vencidos','Fijadas','Hechos'].map((x,i)=><button className={filter===x?'chosen':''} onClick={()=>setFilter(x)} key={x}>{x}{i>0&&i<4?` ${counts[i-1]}`:''}</button>)}<span>−　100%　+</span></div><div className="board" ref={boardRef}>{notes.length?notes.map((n:Note)=><Card note={n} update={update} select={select} key={n.id}/>):<div className="empty"><h2>Tu pizarrón está vacío</h2><p>Escribí algo que quieras recordar.</p></div>}</div></section>
-function Card({note,update,select}:any){const start=useRef<any>(null);const down=(e:React.PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;start.current={x:e.clientX,y:e.clientY,l:note.x,t:note.y};(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)};const move=(e:React.PointerEvent)=>start.current&&update(note.id,{x:Math.max(0,start.current.l+e.clientX-start.current.x),y:Math.max(0,start.current.t+e.clientY-start.current.y)});return <article className={`card ${note.color} ${note.status==='HECHO'?'done':''}`} style={{left:note.x,top:note.y,width:note.width,minHeight:note.height}} onPointerDown={down} onPointerMove={move} onPointerUp={()=>start.current=null} onDoubleClick={()=>select(note)}><div className="cardtop"><b className={note.priority}/>{note.category}{note.pinned&&<i>⌖</i>}</div><h3>{note.text}</h3><p>{overdue(note)?'Vencida':label(note.date)}{note.time&&` · ${note.time}`}</p><div className="actions"><button onClick={()=>update(note.id,{status:note.status==='HECHO'?'PENDIENTE':'HECHO',completedAt:new Date().toISOString()})}>{note.status==='HECHO'?'↻ Reabrir':'✓ Hecho'}</button><button onClick={()=>select(note)}>•••</button></div></article>}
-function List({title,subtitle,notes,update,select,grouped}:any){const late=notes.filter(overdue),rest=notes.filter((n:Note)=>!overdue(n));return <section className="list"><div className="heading"><p>{subtitle}</p><h1>{title}</h1></div>{grouped&&<NoteList title="Vencidos" notes={late} update={update} select={select}/>}<NoteList title={grouped?'Hoy':''} notes={rest} update={update} select={select}/></section>}
-function NoteList({title,notes,update,select}:any){return <div className="note-list">{title&&<h2>{title}<small>{notes.length}</small></h2>}{notes.length?notes.map((n:Note)=><div className="rem" key={n.id}><button className={`check ${n.status==='HECHO'?'checked':''}`} onClick={()=>update(n.id,{status:n.status==='HECHO'?'PENDIENTE':'HECHO',completedAt:new Date().toISOString()})}>✓</button><button className="remtext" onClick={()=>select(n)}><b>{n.text}</b><span>{overdue(n)?'Vencida · ':''}{label(n.date)}{n.time&&` · ${n.time}`}　{i(n.category)}</span></button><button className="postpone" onClick={()=>update(n.id,{date:tomorrow})}>Posponer</button></div>):<p className="nothing">No hay notas aquí.</p>}</div>};const i=(x:string)=><i>{x}</i>
-function Reminders({notes,update,select}:any){return <section className="list"><div className="heading"><p>{notes.length} pendientes · {notes.filter(overdue).length} vencidas</p><h1>Mis recordatorios</h1></div>{[['Vencidos',notes.filter(overdue)],['Hoy',notes.filter((n:Note)=>n.date===today)],['Mañana',notes.filter((n:Note)=>n.date===tomorrow)],['Sin fecha',notes.filter((n:Note)=>!n.date)]].map(([t,ns]:any)=><NoteList title={t} notes={ns} update={update} select={select} key={t}/>)}</section>}
-function Calendar({notes,select}:any){const d=new Date(),start=new Date(d.getFullYear(),d.getMonth(),1).getDay(),days=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();return <section className="calendar"><div className="heading"><p>Vista mensual</p><h1>{new Intl.DateTimeFormat('es-AR',{month:'long',year:'numeric'}).format(d)}</h1></div><div className="calhead">{['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'].map(x=><span key={x}>{x}</span>)}</div><div className="grid">{Array.from({length:start},(_,i)=><div key={'b'+i}/>)}{Array.from({length:days},(_,i)=>{const day=i+1,ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`,a=notes.filter((n:Note)=>n.date===ds);return <div className={ds===today?'now':''} key={day}><b>{day}</b>{a.slice(0,3).map((n:Note)=><button onClick={()=>select(n)} key={n.id}>{n.text}</button>)}</div>})}</div></section>}
-function Composer({close,create}:any){const[text,setText]=useState(''),[date,setDate]=useState<string|undefined>();return <div className="overlay"><form className="composer" onSubmit={e=>{e.preventDefault();create(text,date)}}><button type="button" className="x" onClick={close}>×</button><small>NUEVA NOTA</small><input autoFocus value={text} onChange={e=>setText(e.target.value)} placeholder="¿Qué querés recordar?"/><div><button type="button" onClick={()=>setDate(today)}>Hoy</button><button type="button" onClick={()=>setDate(tomorrow)}>Mañana</button><button className="new" type="submit">Crear nota ↵</button></div></form></div>}
-function Palette({notes,close,select,go}:any){const[q,setQ]=useState('');const hits=notes.filter((n:Note)=>`${n.text} ${n.category} ${n.description||''}`.toLowerCase().includes(q.toLowerCase())).slice(0,5);return <div className="overlay"><div className="palette"><input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar una nota o comando…"/><small>IR A</small>{[['board','Pizarrón'],['reminders','Recordatorios'],['calendar','Calendario'],['done','Hechos']].map(([v,l])=><button onClick={()=>go(v)} key={v}>{l}</button>)}{hits.length>0&&<><small>NOTAS</small>{hits.map((n:Note)=><button onClick={()=>{select(n);close()}} key={n.id}>{n.text}<i>{n.category}</i></button>)}</>}<button className="closepal" onClick={close}>Cerrar</button></div></div>}
-function Detail({note,update,close}:any){const[f,setF]=useState(note);useEffect(()=>setF(note),[note]);const save=(x:any)=>{setF((old:any)=>({...old,...x}));update(note.id,x)};return <aside className="detail"><button className="x" onClick={close}>×</button><small>NOTA</small><textarea value={f.text} onChange={e=>save({text:e.target.value})}/><textarea className="desc" placeholder="Agregá una descripción…" value={f.description||''} onChange={e=>save({description:e.target.value})}/><label>Fecha<input type="date" value={f.date||''} onChange={e=>save({date:e.target.value||undefined})}/></label><label>Hora<input type="time" value={f.time||''} onChange={e=>save({time:e.target.value||undefined})}/></label><label>Categoría<select value={f.category} onChange={e=>save({category:e.target.value})}>{['General','Calidad','Ventas','Postventa','Personal','Ideas'].map(x=><option key={x}>{x}</option>)}</select></label><label>Prioridad<select value={f.priority} onChange={e=>save({priority:e.target.value})}>{['BAJA','NORMAL','ALTA','URGENTE'].map(x=><option key={x}>{x}</option>)}</select></label><div className="colors">{['yellow','blue','green','rose','violet'].map(c=><button className={c} onClick={()=>save({color:c})} key={c}/>)}</div><button className="complete" onClick={()=>save({status:f.status==='HECHO'?'PENDIENTE':'HECHO',completedAt:new Date().toISOString()})}>{f.status==='HECHO'?'↻ Reabrir nota':'✓ Marcar como hecha'}</button></aside>}
+
+const today = new Date().toISOString().slice(0, 10)
+const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10)
+const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10)
+
+const seed: Note[] = [
+  { id: '1', text: 'Revisar resultados SSI', status: 'PENDIENTE', date: today, time: '15:00', category: 'Ventas', priority: 'ALTA', color: 'yellow', pinned: true, x: 90, y: 80, width: 260, height: 155, createdAt: today },
+  { id: '2', text: 'Validar tiempos de gestoría', status: 'PENDIENTE', date: today, category: 'Calidad', priority: 'NORMAL', color: 'blue', pinned: false, x: 420, y: 190, width: 260, height: 150, createdAt: today },
+  { id: '3', text: 'Hablar con Marcelo por reclamo', status: 'PENDIENTE', date: yesterday, category: 'Postventa', priority: 'URGENTE', color: 'rose', pinned: false, x: 740, y: 90, width: 265, height: 160, createdAt: yesterday },
+  { id: '4', text: 'IDEA: mejorar mapa de procesos', status: 'PENDIENTE', category: 'Ideas', priority: 'BAJA', color: 'violet', pinned: false, x: 200, y: 440, width: 260, height: 150, createdAt: today },
+  { id: '5', text: 'Actualizar procedimiento de entrega', status: 'HECHO', date: today, category: 'Calidad', priority: 'NORMAL', color: 'green', pinned: false, x: 590, y: 410, width: 260, height: 150, createdAt: today, completedAt: today }
+]
+
+const overdue = (n: Note) => n.status === 'PENDIENTE' && !!n.date && n.date < today
+const label = (d?: string) => !d ? 'Sin fecha' : d === today ? 'Hoy' : d === tomorrow ? 'Mañana' : new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short' }).format(new Date(d + 'T12:00:00'))
+const apiUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL as string | undefined
+
+const remote = (action: string, id?: string, data?: unknown) =>
+  !apiUrl
+    ? Promise.resolve()
+    : fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action, id, data }) })
+        .then(r => r.json())
+        .then(r => {
+          if (!r.success) throw Error(r.error || 'Error de sincronización')
+        })
+
+const toSheet = (n: Partial<Note>) =>
+  Object.fromEntries(
+    Object.entries(n).map(([k, v]) => [
+      {
+        id: 'ID',
+        text: 'TEXTO',
+        description: 'DESCRIPCION',
+        status: 'ESTADO',
+        date: 'FECHA',
+        time: 'HORA',
+        category: 'CATEGORIA',
+        priority: 'PRIORIDAD',
+        color: 'COLOR',
+        pinned: 'FIJADA',
+        x: 'X',
+        y: 'Y',
+        width: 'ANCHO',
+        height: 'ALTO',
+        createdAt: 'CREADO_EN',
+        completedAt: 'COMPLETADO_EN'
+      }[k] || k.toUpperCase(),
+      v
+    ])
+  )
+
+const fromSheet = (n: any): Note => ({
+  id: n.ID,
+  text: n.TEXTO || '',
+  description: n.DESCRIPCION || '',
+  status: n.ESTADO || 'PENDIENTE',
+  date: n.FECHA || undefined,
+  time: n.HORA || undefined,
+  category: n.CATEGORIA || 'General',
+  priority: n.PRIORIDAD || 'NORMAL',
+  color: n.COLOR || 'yellow',
+  pinned: n.FIJADA === true || n.FIJADA === 'TRUE',
+  x: Number(n.X) || 120,
+  y: Number(n.Y) || 120,
+  width: Number(n.ANCHO) || 260,
+  height: Number(n.ALTO) || 150,
+  createdAt: n.CREADO_EN || new Date().toISOString(),
+  completedAt: n.COMPLETADO_EN || undefined
+})
+
+export default function App() {
+  const [notes, setNotes] = useState<Note[]>(() => JSON.parse(localStorage.getItem('mi-tablero-notes') || 'null') ?? seed)
+  const [view, setView] = useState<View>('board')
+  const [filter, setFilter] = useState('Todos')
+  const [selected, setSelected] = useState<Note | null>(null)
+  const [composer, setComposer] = useState(false)
+  const [palette, setPalette] = useState(false)
+  const [query, setQuery] = useState('')
+  const board = useRef<HTMLDivElement>(null)
+
+  useEffect(() => localStorage.setItem('mi-tablero-notes', JSON.stringify(notes)), [notes])
+
+  useEffect(() => {
+    if (apiUrl) {
+      fetch(`${apiUrl}?action=getNotes`)
+        .then(r => r.json())
+        .then(r => r.success && setNotes(r.data.map(fromSheet)))
+        .catch(() => console.warn('No se pudo cargar Google Sheets; se usa el cache local'))
+    }
+  }, [])
+
+  useEffect(() => {
+    const f = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        setComposer(true)
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPalette(true)
+      }
+      if (e.key === 'Escape') {
+        setSelected(null)
+        setPalette(false)
+        setComposer(false)
+      }
+    }
+    addEventListener('keydown', f)
+    return () => removeEventListener('keydown', f)
+  }, [])
+
+  const update = (id: string, data: Partial<Note>) => {
+    setNotes(x => x.map(n => (n.id === id ? { ...n, ...data } : n)))
+    void remote('updateNote', id, toSheet(data)).catch(() => console.warn('Error de sincronización'))
+  }
+
+  const create = (text: string, date?: string) => {
+    if (!text.trim()) return
+    const r = board.current?.getBoundingClientRect()
+    const n: Note = {
+      id: crypto.randomUUID(),
+      text: text.trim(),
+      status: 'PENDIENTE',
+      date,
+      category: 'General',
+      priority: 'NORMAL',
+      color: 'yellow',
+      pinned: false,
+      x: Math.max(70, (r?.width || 800) / 2 - 130),
+      y: Math.max(70, (r?.height || 600) / 2 - 75),
+      width: 260,
+      height: 150,
+      createdAt: new Date().toISOString()
+    }
+    setNotes(x => [...x, n])
+    void remote('createNote', undefined, toSheet(n)).catch(() => console.warn('Error de sincronización'))
+    setComposer(false)
+    setSelected(n)
+  }
+
+  const pending = notes.filter(n => n.status === 'PENDIENTE')
+  const shown = useMemo(
+    () =>
+      notes
+        .filter(n =>
+          filter === 'Pendientes'
+            ? n.status === 'PENDIENTE'
+            : filter === 'Hoy'
+            ? n.status === 'PENDIENTE' && n.date === today
+            : filter === 'Vencidos'
+            ? overdue(n)
+            : filter === 'Fijadas'
+            ? n.pinned
+            : filter === 'Hechos'
+            ? n.status === 'HECHO'
+            : n.status !== 'ARCHIVADO'
+        )
+        .filter(n => !query || `${n.text} ${n.category}`.toLowerCase().includes(query.toLowerCase())),
+    [notes, filter, query]
+  )
+
+  const nav: [View, React.ReactNode, string][] = [
+    ['board', <LayoutDashboard size={18} strokeWidth={1.8} />, 'Pizarrón'],
+    ['today', <Sun size={18} strokeWidth={1.8} />, 'Mi día'],
+    ['reminders', <CheckCircle2 size={18} strokeWidth={1.8} />, 'Recordatorios'],
+    ['calendar', <CalendarDays size={18} strokeWidth={1.8} />, 'Calendario'],
+    ['done', <CheckCheck size={18} strokeWidth={1.8} />, 'Hechos']
+  ]
+
+  const categories = ['General', 'Calidad', 'Ventas', 'Postventa', 'Personal', 'Ideas']
+
+  return (
+    <div className="app">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-logo">M</div>
+          <span className="brand-title">Mi Tablero</span>
+        </div>
+
+        <nav>
+          {nav.map(([v, icon, t]) => (
+            <button className={view === v ? 'active' : ''} onClick={() => setView(v)} key={v}>
+              <span className="nav-icon">{icon}</span>
+              <span className="nav-label">{t}</span>
+              {v === 'reminders' && pending.length > 0 && <em className="badge-count">{pending.length}</em>}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sect-wrapper">
+          <small className="sect">CATEGORÍAS</small>
+        </div>
+        <div className="cat-list">
+          {categories.map(c => (
+            <button
+              className="cat"
+              onClick={() => {
+                setView('board')
+                setQuery(c)
+              }}
+              key={c}
+            >
+              <span className={`cat-dot cat-dot-${c.toLowerCase()}`} />
+              <span className="cat-name">{c}</span>
+            </button>
+          ))}
+        </div>
+
+        <footer>
+          <div className="footer-status">
+            <span className="status-indicator" />
+            <span>Guardado automáticamente</span>
+          </div>
+          <div className="footer-config">
+            <Settings size={14} strokeWidth={1.8} />
+            <small>Configuración</small>
+          </div>
+        </footer>
+      </aside>
+
+      <main>
+        <header>
+          <button className="search" onClick={() => setPalette(true)}>
+            <Search size={16} strokeWidth={1.8} className="search-icon" />
+            <span className="search-prompt">Buscar notas, categorías…</span>
+            <kbd className="search-kbd">Ctrl K</kbd>
+          </button>
+          <button className="new" onClick={() => setComposer(true)}>
+            <Plus size={16} strokeWidth={2.2} />
+            <span>Nueva nota</span>
+          </button>
+        </header>
+
+        {view === 'board' && (
+          <Board
+            notes={shown}
+            filter={filter}
+            setFilter={setFilter}
+            counts={[
+              notes.filter(n => n.status !== 'ARCHIVADO').length,
+              pending.length,
+              pending.filter(n => n.date === today).length,
+              pending.filter(overdue).length,
+              notes.filter(n => n.pinned && n.status !== 'ARCHIVADO').length,
+              notes.filter(n => n.status === 'HECHO').length
+            ]}
+            update={update}
+            select={setSelected}
+            boardRef={board}
+          />
+        )}
+        {view === 'today' && (
+          <List
+            title="Mi día"
+            subtitle="Lo que merece tu atención hoy."
+            notes={pending.filter(n => overdue(n) || n.date === today)}
+            update={update}
+            select={setSelected}
+            grouped
+          />
+        )}
+        {view === 'reminders' && <Reminders notes={pending} update={update} select={setSelected} />}
+        {view === 'done' && (
+          <List
+            title="Hechos"
+            subtitle="Todo lo que ya resolviste y completaste."
+            notes={notes.filter(n => n.status === 'HECHO')}
+            update={update}
+            select={setSelected}
+          />
+        )}
+        {view === 'calendar' && <Calendar notes={notes} select={setSelected} />}
+      </main>
+
+      {composer && <Composer close={() => setComposer(false)} create={create} />}
+      {palette && (
+        <Palette
+          notes={notes}
+          close={() => setPalette(false)}
+          select={setSelected}
+          go={(v: View) => {
+            setView(v)
+            setPalette(false)
+          }}
+        />
+      )}
+      {selected && (
+        <Detail
+          note={notes.find(n => n.id === selected.id) || selected}
+          update={update}
+          close={() => setSelected(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function Board({ notes, filter, setFilter, counts, update, select, boardRef }: any) {
+  const filterList = [
+    { key: 'Todos', count: counts[0] },
+    { key: 'Pendientes', count: counts[1] },
+    { key: 'Hoy', count: counts[2] },
+    { key: 'Vencidos', count: counts[3] },
+    { key: 'Fijadas', count: counts[4] },
+    { key: 'Hechos', count: counts[5] }
+  ]
+
+  return (
+    <section className="board-page">
+      <div className="toolbar">
+        <div className="filter-group">
+          {filterList.map(item => (
+            <button
+              className={`filter-chip ${filter === item.key ? 'chosen' : ''}`}
+              onClick={() => setFilter(item.key)}
+              key={item.key}
+            >
+              <span>{item.key}</span>
+              {typeof item.count === 'number' && item.count > 0 && (
+                <span className={`chip-badge ${item.key === 'Vencidos' && item.count > 0 ? 'badge-danger' : ''}`}>
+                  {item.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="canvas-zoom-control">
+          <button className="zoom-btn" title="Alejar">−</button>
+          <span className="zoom-value">100%</span>
+          <button className="zoom-btn" title="Acercar">+</button>
+        </div>
+      </div>
+      <div className="board" ref={boardRef}>
+        {notes.length ? (
+          notes.map((n: Note) => <Card note={n} update={update} select={select} key={n.id} />)
+        ) : (
+          <div className="empty">
+            <div className="empty-icon-wrap">
+              <LayoutDashboard size={32} strokeWidth={1.5} />
+            </div>
+            <h2>Tu pizarrón está vacío</h2>
+            <p>Escribí algo que quieras recordar o creá una nueva nota.</p>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function Card({ note, update, select }: any) {
+  const start = useRef<any>(null)
+  const [isDragging, setIsDragging] = useState(false)
+
+  const down = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return
+    start.current = { x: e.clientX, y: e.clientY, l: note.x, t: note.y }
+    setIsDragging(true)
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+
+  const move = (e: React.PointerEvent) => {
+    if (!start.current) return
+    update(note.id, {
+      x: Math.max(0, start.current.l + e.clientX - start.current.x),
+      y: Math.max(0, start.current.t + e.clientY - start.current.y)
+    })
+  }
+
+  const up = () => {
+    start.current = null
+    setIsDragging(false)
+  }
+
+  const isOverdue = overdue(note)
+
+  return (
+    <article
+      className={`card ${note.color} ${note.status === 'HECHO' ? 'done' : ''} ${note.pinned ? 'is-pinned' : ''} ${isDragging ? 'dragging' : ''}`}
+      style={{ left: note.x, top: note.y, width: note.width, minHeight: note.height }}
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={up}
+      onDoubleClick={() => select(note)}
+    >
+      <div className="cardtop">
+        <div className="card-badge-row">
+          <span className={`priority-pill priority-${note.priority.toLowerCase()}`}>
+            <b className={`prio-dot ${note.priority}`} />
+            {note.priority}
+          </span>
+          <span className="category-pill">{note.category}</span>
+        </div>
+        {note.pinned && (
+          <span className="pin-badge" title="Nota fijada">
+            <Pin size={12} strokeWidth={2.4} />
+          </span>
+        )}
+      </div>
+
+      <h3 className="card-title">{note.text}</h3>
+
+      <div className="card-meta">
+        {(note.date || note.time) && (
+          <span className={`date-badge ${isOverdue ? 'date-overdue' : ''}`}>
+            {isOverdue && <AlertCircle size={12} strokeWidth={2.2} />}
+            <span>{isOverdue ? 'Vencida' : label(note.date)}</span>
+            {note.time && <span className="meta-time">· {note.time}</span>}
+          </span>
+        )}
+      </div>
+
+      <div className="actions">
+        <button
+          className="btn-action-status"
+          onClick={() =>
+            update(note.id, {
+              status: note.status === 'HECHO' ? 'PENDIENTE' : 'HECHO',
+              completedAt: new Date().toISOString()
+            })
+          }
+        >
+          {note.status === 'HECHO' ? (
+            <>
+              <RotateCcw size={12} strokeWidth={2} /> Reabrir
+            </>
+          ) : (
+            <>
+              <Check size={13} strokeWidth={2.4} /> Hecho
+            </>
+          )}
+        </button>
+        <button className="btn-action-more" onClick={() => select(note)} title="Detalles">
+          <MoreHorizontal size={14} strokeWidth={2} />
+        </button>
+      </div>
+    </article>
+  )
+}
+
+function List({ title, subtitle, notes, update, select, grouped }: any) {
+  const late = notes.filter(overdue)
+  const rest = notes.filter((n: Note) => !overdue(n))
+
+  return (
+    <section className="list">
+      <div className="heading">
+        <p className="subtitle">{subtitle}</p>
+        <div className="title-row">
+          <h1>{title}</h1>
+          <div className="stats-pills">
+            <span className="stat-pill">{notes.length} total</span>
+            {late.length > 0 && <span className="stat-pill stat-pill-danger">{late.length} vencidas</span>}
+          </div>
+        </div>
+      </div>
+      {grouped && late.length > 0 && (
+        <NoteList title="Vencidos" notes={late} update={update} select={select} isOverdueSection />
+      )}
+      <NoteList title={grouped ? 'Para hoy' : ''} notes={rest} update={update} select={select} />
+    </section>
+  )
+}
+
+function NoteList({ title, notes, update, select, isOverdueSection }: any) {
+  return (
+    <div className="note-list">
+      {title && (
+        <div className="note-list-header">
+          <h2>{title}</h2>
+          <small className={isOverdueSection ? 'badge-danger' : ''}>{notes.length}</small>
+        </div>
+      )}
+      {notes.length ? (
+        notes.map((n: Note) => (
+          <div className={`rem ${n.status === 'HECHO' ? 'rem-done' : ''}`} key={n.id}>
+            <button
+              className={`check ${n.status === 'HECHO' ? 'checked' : ''}`}
+              onClick={() =>
+                update(n.id, {
+                  status: n.status === 'HECHO' ? 'PENDIENTE' : 'HECHO',
+                  completedAt: new Date().toISOString()
+                })
+              }
+              title={n.status === 'HECHO' ? 'Marcar como pendiente' : 'Marcar como resuelta'}
+            >
+              <Check size={13} strokeWidth={2.8} />
+            </button>
+            <button className="remtext" onClick={() => select(n)}>
+              <b>{n.text}</b>
+              <div className="rem-subinfo">
+                {overdue(n) ? (
+                  <span className="overdue-tag">Vencida · {label(n.date)}</span>
+                ) : (
+                  <span>{label(n.date)}</span>
+                )}
+                {n.time && <span>· {n.time}</span>}
+                <span className="rem-cat-badge">{n.category}</span>
+                <span className={`rem-prio prio-${n.priority.toLowerCase()}`}>{n.priority}</span>
+              </div>
+            </button>
+            <button className="postpone" onClick={() => update(n.id, { date: tomorrow })}>
+              <Clock size={13} strokeWidth={2} />
+              <span>Mañana</span>
+            </button>
+          </div>
+        ))
+      ) : (
+        <p className="nothing">No hay notas en esta sección.</p>
+      )}
+    </div>
+  )
+}
+
+function Reminders({ notes, update, select }: any) {
+  const late = notes.filter(overdue)
+  const todayNotes = notes.filter((n: Note) => n.date === today)
+  const tomorrowNotes = notes.filter((n: Note) => n.date === tomorrow)
+  const noDateNotes = notes.filter((n: Note) => !n.date)
+
+  return (
+    <section className="list">
+      <div className="heading">
+        <p className="subtitle">Tus compromisos y pendientes ordenados</p>
+        <div className="title-row">
+          <h1>Mis recordatorios</h1>
+          <div className="stats-pills">
+            <span className="stat-pill">{notes.length} pendientes</span>
+            {late.length > 0 && <span className="stat-pill stat-pill-danger">{late.length} vencidas</span>}
+          </div>
+        </div>
+      </div>
+      {[
+        ['Vencidos', late, true],
+        ['Hoy', todayNotes, false],
+        ['Mañana', tomorrowNotes, false],
+        ['Sin fecha', noDateNotes, false]
+      ].map(([t, ns, isLate]: any) => (
+        <NoteList title={t} notes={ns} update={update} select={select} isOverdueSection={isLate} key={t} />
+      ))}
+    </section>
+  )
+}
+
+function Calendar({ notes, select }: any) {
+  const d = new Date()
+  const start = new Date(d.getFullYear(), d.getMonth(), 1).getDay()
+  const days = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+
+  return (
+    <section className="calendar">
+      <div className="heading">
+        <p className="subtitle">Planificación y vista mensual</p>
+        <h1>{new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' }).format(d)}</h1>
+      </div>
+      <div className="calendar-card">
+        <div className="calhead">
+          {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(x => (
+            <span key={x}>{x}</span>
+          ))}
+        </div>
+        <div className="grid">
+          {Array.from({ length: start }, (_, i) => (
+            <div className="empty-day" key={'b' + i} />
+          ))}
+          {Array.from({ length: days }, (_, i) => {
+            const day = i + 1
+            const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+            const a = notes.filter((n: Note) => n.date === ds)
+            return (
+              <div className={`cal-cell ${ds === today ? 'now' : ''}`} key={day}>
+                <span className="cell-num">{day}</span>
+                <div className="cell-notes">
+                  {a.slice(0, 3).map((n: Note) => (
+                    <button
+                      className={`cal-note-pill ${n.color}`}
+                      onClick={() => select(n)}
+                      key={n.id}
+                      title={n.text}
+                    >
+                      <span className="cal-note-dot" />
+                      <span className="cal-note-text">{n.text}</span>
+                    </button>
+                  ))}
+                  {a.length > 3 && <small className="cal-more">+{a.length - 3} más</small>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function Composer({ close, create }: any) {
+  const [text, setText] = useState('')
+  const [date, setDate] = useState<string | undefined>()
+
+  return (
+    <div className="overlay" onClick={e => e.target === e.currentTarget && close()}>
+      <form
+        className="composer"
+        onSubmit={e => {
+          e.preventDefault()
+          create(text, date)
+        }}
+      >
+        <button type="button" className="x" onClick={close} title="Cerrar">
+          <X size={18} strokeWidth={2} />
+        </button>
+        <small className="modal-tag">NUEVA NOTA</small>
+        <input
+          autoFocus
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="¿Qué querés recordar?"
+        />
+        <div className="composer-bottom">
+          <div className="quick-dates">
+            <button
+              type="button"
+              className={date === today ? 'btn-date-selected' : ''}
+              onClick={() => setDate(today)}
+            >
+              Hoy
+            </button>
+            <button
+              type="button"
+              className={date === tomorrow ? 'btn-date-selected' : ''}
+              onClick={() => setDate(tomorrow)}
+            >
+              Mañana
+            </button>
+          </div>
+          <button className="new" type="submit">
+            <Plus size={15} strokeWidth={2.4} />
+            <span>Crear nota</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function Palette({ notes, close, select, go }: any) {
+  const [q, setQ] = useState('')
+  const hits = notes
+    .filter((n: Note) => `${n.text} ${n.category} ${n.description || ''}`.toLowerCase().includes(q.toLowerCase()))
+    .slice(0, 5)
+
+  return (
+    <div className="overlay" onClick={e => e.target === e.currentTarget && close()}>
+      <div className="palette">
+        <div className="palette-input-wrap">
+          <Search size={18} strokeWidth={2} className="palette-search-icon" />
+          <input
+            autoFocus
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Buscar nota, categoría o comando…"
+          />
+        </div>
+        <small className="modal-tag">NAVEGAR A</small>
+        <div className="palette-nav-list">
+          {[
+            ['board', 'Pizarrón'],
+            ['today', 'Mi día'],
+            ['reminders', 'Recordatorios'],
+            ['calendar', 'Calendario'],
+            ['done', 'Hechos']
+          ].map(([v, l]) => (
+            <button className="palette-cmd-btn" onClick={() => go(v)} key={v}>
+              <span>{l}</span>
+              <kbd>Ir</kbd>
+            </button>
+          ))}
+        </div>
+        {hits.length > 0 && (
+          <>
+            <small className="modal-tag">NOTAS ENCONTRADAS</small>
+            <div className="palette-hits-list">
+              {hits.map((n: Note) => (
+                <button
+                  className="palette-hit-item"
+                  onClick={() => {
+                    select(n)
+                    close()
+                  }}
+                  key={n.id}
+                >
+                  <span className="hit-text">{n.text}</span>
+                  <i className="hit-cat">{n.category}</i>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        <div className="palette-footer">
+          <button className="closepal" onClick={close}>
+            Cerrar Esc
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Detail({ note, update, close }: any) {
+  const [f, setF] = useState(note)
+  useEffect(() => setF(note), [note])
+
+  const save = (x: any) => {
+    setF((old: any) => ({ ...old, ...x }))
+    update(note.id, x)
+  }
+
+  const colors = ['yellow', 'blue', 'green', 'rose', 'violet']
+
+  return (
+    <aside className="detail">
+      <div className="detail-header">
+        <small className="modal-tag">DETALLE DE NOTA</small>
+        <button className="x" onClick={close} title="Cerrar panel">
+          <X size={18} strokeWidth={2} />
+        </button>
+      </div>
+
+      <div className="detail-content">
+        <textarea
+          className="detail-title-input"
+          value={f.text}
+          onChange={e => save({ text: e.target.value })}
+          placeholder="Título de la nota..."
+        />
+        <textarea
+          className="desc"
+          placeholder="Agregá notas adicionales o descripción…"
+          value={f.description || ''}
+          onChange={e => save({ description: e.target.value })}
+        />
+
+        <div className="detail-fields">
+          <label>
+            <span className="field-label">Fecha</span>
+            <input
+              type="date"
+              value={f.date || ''}
+              onChange={e => save({ date: e.target.value || undefined })}
+            />
+          </label>
+          <label>
+            <span className="field-label">Hora</span>
+            <input
+              type="time"
+              value={f.time || ''}
+              onChange={e => save({ time: e.target.value || undefined })}
+            />
+          </label>
+          <label>
+            <span className="field-label">Categoría</span>
+            <select value={f.category} onChange={e => save({category: e.target.value})}>
+              {['General', 'Calidad', 'Ventas', 'Postventa', 'Personal', 'Ideas'].map(x => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="field-label">Prioridad</span>
+            <select value={f.priority} onChange={e => save({ priority: e.target.value })}>
+              {['BAJA', 'NORMAL', 'ALTA', 'URGENTE'].map(x => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="color-section">
+          <span className="field-label">Color de tarjeta</span>
+          <div className="colors">
+            {colors.map(c => (
+              <button
+                className={`color-picker-btn ${c} ${f.color === c ? 'color-active' : ''}`}
+                onClick={() => save({ color: c })}
+                key={c}
+                title={c}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="detail-footer-actions">
+          <button
+            className={`complete ${f.status === 'HECHO' ? 'complete-reopen' : ''}`}
+            onClick={() =>
+              save({
+                status: f.status === 'HECHO' ? 'PENDIENTE' : 'HECHO',
+                completedAt: new Date().toISOString()
+              })
+            }
+          >
+            {f.status === 'HECHO' ? (
+              <>
+                <RotateCcw size={16} strokeWidth={2} />
+                <span>Reabrir nota</span>
+              </>
+            ) : (
+              <>
+                <Check size={16} strokeWidth={2.4} />
+                <span>Marcar como hecha</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </aside>
+  )
+}

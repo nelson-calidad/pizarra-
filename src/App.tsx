@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  LayoutDashboard,
-  Sun,
-  CheckCircle2,
+  LayoutGrid,
+  SunMedium,
+  ListTodo,
   CalendarDays,
-  CheckCheck,
+  CircleCheckBig,
   Search,
   Plus,
   Pin,
@@ -44,15 +44,20 @@ const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10)
 const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10)
 
 const seed: Note[] = [
-  { id: '1', text: 'Revisar resultados SSI', status: 'PENDIENTE', date: today, time: '15:00', category: 'Ventas', priority: 'ALTA', color: 'yellow', pinned: true, x: 90, y: 80, width: 260, height: 155, createdAt: today },
-  { id: '2', text: 'Validar tiempos de gestoría', status: 'PENDIENTE', date: today, category: 'Calidad', priority: 'NORMAL', color: 'blue', pinned: false, x: 420, y: 190, width: 260, height: 150, createdAt: today },
-  { id: '3', text: 'Hablar con Marcelo por reclamo', status: 'PENDIENTE', date: yesterday, category: 'Postventa', priority: 'URGENTE', color: 'rose', pinned: false, x: 740, y: 90, width: 265, height: 160, createdAt: yesterday },
-  { id: '4', text: 'IDEA: mejorar mapa de procesos', status: 'PENDIENTE', category: 'Ideas', priority: 'BAJA', color: 'violet', pinned: false, x: 200, y: 440, width: 260, height: 150, createdAt: today },
-  { id: '5', text: 'Actualizar procedimiento de entrega', status: 'HECHO', date: today, category: 'Calidad', priority: 'NORMAL', color: 'green', pinned: false, x: 590, y: 410, width: 260, height: 150, createdAt: today, completedAt: today }
+  { id: '1', text: 'Revisar resultados SSI', status: 'PENDIENTE', date: today, time: '15:00', category: 'Ventas', priority: 'ALTA', color: 'yellow', pinned: true, x: 90, y: 80, width: 264, height: 160, createdAt: today },
+  { id: '2', text: 'Validar tiempos de gestoría', status: 'PENDIENTE', date: today, category: 'Calidad', priority: 'NORMAL', color: 'blue', pinned: false, x: 420, y: 190, width: 264, height: 155, createdAt: today },
+  { id: '3', text: 'Hablar con Marcelo por reclamo', status: 'PENDIENTE', date: yesterday, category: 'Postventa', priority: 'URGENTE', color: 'rose', pinned: false, x: 740, y: 90, width: 270, height: 165, createdAt: yesterday },
+  { id: '4', text: 'IDEA: mejorar mapa de procesos', status: 'PENDIENTE', category: 'Ideas', priority: 'BAJA', color: 'violet', pinned: false, x: 200, y: 440, width: 264, height: 155, createdAt: today },
+  { id: '5', text: 'Actualizar procedimiento de entrega', status: 'HECHO', date: today, category: 'Calidad', priority: 'NORMAL', color: 'green', pinned: false, x: 590, y: 410, width: 264, height: 155, createdAt: today, completedAt: today }
 ]
 
 const overdue = (n: Note) => n.status === 'PENDIENTE' && !!n.date && n.date < today
 const label = (d?: string) => !d ? 'Sin fecha' : d === today ? 'Hoy' : d === tomorrow ? 'Mañana' : new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short' }).format(new Date(d + 'T12:00:00'))
+const formatCalendarMonth = (date: Date) => {
+  const raw = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' }).format(date)
+  return raw.charAt(0).toUpperCase() + raw.slice(1).replace(/ De /g, ' de ')
+}
+
 const apiUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL as string | undefined
 
 const remote = (action: string, id?: string, data?: unknown) =>
@@ -102,8 +107,8 @@ const fromSheet = (n: any): Note => ({
   pinned: n.FIJADA === true || n.FIJADA === 'TRUE',
   x: Number(n.X) || 120,
   y: Number(n.Y) || 120,
-  width: Number(n.ANCHO) || 260,
-  height: Number(n.ALTO) || 150,
+  width: Number(n.ANCHO) || 264,
+  height: Number(n.ALTO) || 155,
   createdAt: n.CREADO_EN || new Date().toISOString(),
   completedAt: n.COMPLETADO_EN || undefined
 })
@@ -166,10 +171,10 @@ export default function App() {
       priority: 'NORMAL',
       color: 'yellow',
       pinned: false,
-      x: Math.max(70, (r?.width || 800) / 2 - 130),
-      y: Math.max(70, (r?.height || 600) / 2 - 75),
-      width: 260,
-      height: 150,
+      x: Math.max(70, (r?.width || 800) / 2 - 132),
+      y: Math.max(70, (r?.height || 600) / 2 - 78),
+      width: 264,
+      height: 155,
       createdAt: new Date().toISOString()
     }
     setNotes(x => [...x, n])
@@ -200,11 +205,11 @@ export default function App() {
   )
 
   const nav: [View, React.ReactNode, string][] = [
-    ['board', <LayoutDashboard size={18} strokeWidth={1.8} />, 'Pizarrón'],
-    ['today', <Sun size={18} strokeWidth={1.8} />, 'Mi día'],
-    ['reminders', <CheckCircle2 size={18} strokeWidth={1.8} />, 'Recordatorios'],
-    ['calendar', <CalendarDays size={18} strokeWidth={1.8} />, 'Calendario'],
-    ['done', <CheckCheck size={18} strokeWidth={1.8} />, 'Hechos']
+    ['board', <LayoutGrid size={18} strokeWidth={1.9} />, 'Pizarrón'],
+    ['today', <SunMedium size={18} strokeWidth={1.9} />, 'Mi día'],
+    ['reminders', <ListTodo size={18} strokeWidth={1.9} />, 'Recordatorios'],
+    ['calendar', <CalendarDays size={18} strokeWidth={1.9} />, 'Calendario'],
+    ['done', <CircleCheckBig size={18} strokeWidth={1.9} />, 'Hechos']
   ]
 
   const categories = ['General', 'Calidad', 'Ventas', 'Postventa', 'Personal', 'Ideas']
@@ -214,12 +219,15 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-logo">M</div>
-          <span className="brand-title">Mi Tablero</span>
+          <div className="brand-info">
+            <span className="brand-title">Mi Tablero</span>
+            <span className="brand-sub">Workspace</span>
+          </div>
         </div>
 
-        <nav>
+        <nav className="sidebar-nav">
           {nav.map(([v, icon, t]) => (
-            <button className={view === v ? 'active' : ''} onClick={() => setView(v)} key={v}>
+            <button className={`nav-item ${view === v ? 'active' : ''}`} onClick={() => setView(v)} key={v}>
               <span className="nav-icon">{icon}</span>
               <span className="nav-label">{t}</span>
               {v === 'reminders' && pending.length > 0 && <em className="badge-count">{pending.length}</em>}
@@ -227,89 +235,91 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="sect-wrapper">
-          <small className="sect">CATEGORÍAS</small>
-        </div>
-        <div className="cat-list">
-          {categories.map(c => (
-            <button
-              className="cat"
-              onClick={() => {
-                setView('board')
-                setQuery(c)
-              }}
-              key={c}
-            >
-              <span className={`cat-dot cat-dot-${c.toLowerCase()}`} />
-              <span className="cat-name">{c}</span>
-            </button>
-          ))}
+        <div className="sidebar-section">
+          <span className="sidebar-section-title">CATEGORÍAS</span>
+          <div className="cat-list">
+            {categories.map(c => (
+              <button
+                className="cat-item"
+                onClick={() => {
+                  setView('board')
+                  setQuery(c)
+                }}
+                key={c}
+              >
+                <span className={`cat-dot cat-dot-${c.toLowerCase()}`} />
+                <span className="cat-name">{c}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <footer>
+        <footer className="sidebar-footer">
           <div className="footer-status">
             <span className="status-indicator" />
-            <span>Guardado automáticamente</span>
+            <span>Sincronizado</span>
           </div>
-          <div className="footer-config">
-            <Settings size={14} strokeWidth={1.8} />
-            <small>Configuración</small>
+          <div className="footer-action">
+            <Settings size={15} strokeWidth={1.8} />
+            <span>Configuración</span>
           </div>
         </footer>
       </aside>
 
-      <main>
-        <header>
-          <button className="search" onClick={() => setPalette(true)}>
-            <Search size={16} strokeWidth={1.8} className="search-icon" />
-            <span className="search-prompt">Buscar notas, categorías…</span>
-            <kbd className="search-kbd">Ctrl K</kbd>
+      <main className="main-content">
+        <header className="app-header">
+          <button className="search-box" onClick={() => setPalette(true)}>
+            <Search size={17} strokeWidth={1.9} className="search-icon" />
+            <span className="search-placeholder">Buscar notas, categorías…</span>
+            <kbd className="search-keycap">Ctrl K</kbd>
           </button>
-          <button className="new" onClick={() => setComposer(true)}>
-            <Plus size={16} strokeWidth={2.2} />
+          <button className="btn-new-note" onClick={() => setComposer(true)}>
+            <Plus size={16} strokeWidth={2.4} />
             <span>Nueva nota</span>
           </button>
         </header>
 
-        {view === 'board' && (
-          <Board
-            notes={shown}
-            filter={filter}
-            setFilter={setFilter}
-            counts={[
-              notes.filter(n => n.status !== 'ARCHIVADO').length,
-              pending.length,
-              pending.filter(n => n.date === today).length,
-              pending.filter(overdue).length,
-              notes.filter(n => n.pinned && n.status !== 'ARCHIVADO').length,
-              notes.filter(n => n.status === 'HECHO').length
-            ]}
-            update={update}
-            select={setSelected}
-            boardRef={board}
-          />
-        )}
-        {view === 'today' && (
-          <List
-            title="Mi día"
-            subtitle="Lo que merece tu atención hoy."
-            notes={pending.filter(n => overdue(n) || n.date === today)}
-            update={update}
-            select={setSelected}
-            grouped
-          />
-        )}
-        {view === 'reminders' && <Reminders notes={pending} update={update} select={setSelected} />}
-        {view === 'done' && (
-          <List
-            title="Hechos"
-            subtitle="Todo lo que ya resolviste y completaste."
-            notes={notes.filter(n => n.status === 'HECHO')}
-            update={update}
-            select={setSelected}
-          />
-        )}
-        {view === 'calendar' && <Calendar notes={notes} select={setSelected} />}
+        <div className="view-container">
+          {view === 'board' && (
+            <Board
+              notes={shown}
+              filter={filter}
+              setFilter={setFilter}
+              counts={[
+                notes.filter(n => n.status !== 'ARCHIVADO').length,
+                pending.length,
+                pending.filter(n => n.date === today).length,
+                pending.filter(overdue).length,
+                notes.filter(n => n.pinned && n.status !== 'ARCHIVADO').length,
+                notes.filter(n => n.status === 'HECHO').length
+              ]}
+              update={update}
+              select={setSelected}
+              boardRef={board}
+            />
+          )}
+          {view === 'today' && (
+            <List
+              title="Mi día"
+              subtitle="Lo que merece tu atención hoy."
+              notes={pending.filter(n => overdue(n) || n.date === today)}
+              update={update}
+              select={setSelected}
+              grouped
+            />
+          )}
+          {view === 'reminders' && <Reminders notes={pending} update={update} select={setSelected} />}
+          {view === 'done' && (
+            <List
+              title="Hechos"
+              subtitle="Todo lo que ya resolviste y completaste."
+              notes={notes.filter(n => n.status === 'HECHO')}
+              update={update}
+              select={setSelected}
+            />
+          )}
+          {view === 'calendar' && <Calendar notes={notes} select={setSelected} />}
+        </div>
       </main>
 
       {composer && <Composer close={() => setComposer(false)} create={create} />}
@@ -348,7 +358,7 @@ function Board({ notes, filter, setFilter, counts, update, select, boardRef }: a
   return (
     <section className="board-page">
       <div className="toolbar">
-        <div className="filter-group">
+        <div className="filter-chips">
           {filterList.map(item => (
             <button
               className={`filter-chip ${filter === item.key ? 'chosen' : ''}`}
@@ -376,7 +386,7 @@ function Board({ notes, filter, setFilter, counts, update, select, boardRef }: a
         ) : (
           <div className="empty">
             <div className="empty-icon-wrap">
-              <LayoutDashboard size={32} strokeWidth={1.5} />
+              <LayoutGrid size={32} strokeWidth={1.6} />
             </div>
             <h2>Tu pizarrón está vacío</h2>
             <p>Escribí algo que quieras recordar o creá una nueva nota.</p>
@@ -482,7 +492,7 @@ function List({ title, subtitle, notes, update, select, grouped }: any) {
   const rest = notes.filter((n: Note) => !overdue(n))
 
   return (
-    <section className="list">
+    <section className="list-view">
       <div className="heading">
         <p className="subtitle">{subtitle}</p>
         <div className="title-row">
@@ -558,7 +568,7 @@ function Reminders({ notes, update, select }: any) {
   const noDateNotes = notes.filter((n: Note) => !n.date)
 
   return (
-    <section className="list">
+    <section className="list-view">
       <div className="heading">
         <p className="subtitle">Tus compromisos y pendientes ordenados</p>
         <div className="title-row">
@@ -587,12 +597,15 @@ function Calendar({ notes, select }: any) {
   const days = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
 
   return (
-    <section className="calendar">
+    <section className="calendar-view">
       <div className="heading">
         <p className="subtitle">Planificación y vista mensual</p>
-        <h1>{new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' }).format(d)}</h1>
+        <div className="title-row">
+          <h1>{formatCalendarMonth(d)}</h1>
+          <span className="stat-pill">{notes.filter((n: Note) => !!n.date).length} notas programadas</span>
+        </div>
       </div>
-      <div className="calendar-card">
+      <div className="calendar-container">
         <div className="calhead">
           {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(x => (
             <span key={x}>{x}</span>
@@ -608,9 +621,12 @@ function Calendar({ notes, select }: any) {
             const a = notes.filter((n: Note) => n.date === ds)
             return (
               <div className={`cal-cell ${ds === today ? 'now' : ''}`} key={day}>
-                <span className="cell-num">{day}</span>
+                <div className="cell-header">
+                  <span className="cell-num">{day}</span>
+                  {a.length > 0 && <span className="cell-count-tag">{a.length}</span>}
+                </div>
                 <div className="cell-notes">
-                  {a.slice(0, 3).map((n: Note) => (
+                  {a.slice(0, 4).map((n: Note) => (
                     <button
                       className={`cal-note-pill ${n.color}`}
                       onClick={() => select(n)}
@@ -621,7 +637,7 @@ function Calendar({ notes, select }: any) {
                       <span className="cal-note-text">{n.text}</span>
                     </button>
                   ))}
-                  {a.length > 3 && <small className="cal-more">+{a.length - 3} más</small>}
+                  {a.length > 4 && <small className="cal-more">+{a.length - 4} más</small>}
                 </div>
               </div>
             )
@@ -639,18 +655,19 @@ function Composer({ close, create }: any) {
   return (
     <div className="overlay" onClick={e => e.target === e.currentTarget && close()}>
       <form
-        className="composer"
+        className="composer-modal"
         onSubmit={e => {
           e.preventDefault()
           create(text, date)
         }}
       >
-        <button type="button" className="x" onClick={close} title="Cerrar">
+        <button type="button" className="modal-close-btn" onClick={close} title="Cerrar">
           <X size={18} strokeWidth={2} />
         </button>
         <small className="modal-tag">NUEVA NOTA</small>
         <input
           autoFocus
+          className="composer-input"
           value={text}
           onChange={e => setText(e.target.value)}
           placeholder="¿Qué querés recordar?"
@@ -672,8 +689,8 @@ function Composer({ close, create }: any) {
               Mañana
             </button>
           </div>
-          <button className="new" type="submit">
-            <Plus size={15} strokeWidth={2.4} />
+          <button className="btn-modal-submit" type="submit">
+            <Plus size={16} strokeWidth={2.4} />
             <span>Crear nota</span>
           </button>
         </div>
@@ -690,11 +707,12 @@ function Palette({ notes, close, select, go }: any) {
 
   return (
     <div className="overlay" onClick={e => e.target === e.currentTarget && close()}>
-      <div className="palette">
+      <div className="palette-modal">
         <div className="palette-input-wrap">
           <Search size={18} strokeWidth={2} className="palette-search-icon" />
           <input
             autoFocus
+            className="palette-input"
             value={q}
             onChange={e => setQ(e.target.value)}
             placeholder="Buscar nota, categoría o comando…"
@@ -711,7 +729,7 @@ function Palette({ notes, close, select, go }: any) {
           ].map(([v, l]) => (
             <button className="palette-cmd-btn" onClick={() => go(v)} key={v}>
               <span>{l}</span>
-              <kbd>Ir</kbd>
+              <kbd className="cmd-kbd">Ir</kbd>
             </button>
           ))}
         </div>
@@ -757,10 +775,10 @@ function Detail({ note, update, close }: any) {
   const colors = ['yellow', 'blue', 'green', 'rose', 'violet']
 
   return (
-    <aside className="detail">
+    <aside className="detail-panel">
       <div className="detail-header">
         <small className="modal-tag">DETALLE DE NOTA</small>
-        <button className="x" onClick={close} title="Cerrar panel">
+        <button className="panel-close-btn" onClick={close} title="Cerrar panel">
           <X size={18} strokeWidth={2} />
         </button>
       </div>
@@ -773,40 +791,42 @@ function Detail({ note, update, close }: any) {
           placeholder="Título de la nota..."
         />
         <textarea
-          className="desc"
+          className="desc-input"
           placeholder="Agregá notas adicionales o descripción…"
           value={f.description || ''}
           onChange={e => save({ description: e.target.value })}
         />
 
-        <div className="detail-fields">
-          <label>
+        <div className="detail-fields-card">
+          <label className="field-row">
             <span className="field-label">Fecha</span>
             <input
               type="date"
+              className="field-input"
               value={f.date || ''}
               onChange={e => save({ date: e.target.value || undefined })}
             />
           </label>
-          <label>
+          <label className="field-row">
             <span className="field-label">Hora</span>
             <input
               type="time"
+              className="field-input"
               value={f.time || ''}
               onChange={e => save({ time: e.target.value || undefined })}
             />
           </label>
-          <label>
+          <label className="field-row">
             <span className="field-label">Categoría</span>
-            <select value={f.category} onChange={e => save({category: e.target.value})}>
+            <select className="field-select" value={f.category} onChange={e => save({ category: e.target.value })}>
               {['General', 'Calidad', 'Ventas', 'Postventa', 'Personal', 'Ideas'].map(x => (
                 <option key={x}>{x}</option>
               ))}
             </select>
           </label>
-          <label>
+          <label className="field-row">
             <span className="field-label">Prioridad</span>
-            <select value={f.priority} onChange={e => save({ priority: e.target.value })}>
+            <select className="field-select" value={f.priority} onChange={e => save({ priority: e.target.value })}>
               {['BAJA', 'NORMAL', 'ALTA', 'URGENTE'].map(x => (
                 <option key={x}>{x}</option>
               ))}
@@ -816,7 +836,7 @@ function Detail({ note, update, close }: any) {
 
         <div className="color-section">
           <span className="field-label">Color de tarjeta</span>
-          <div className="colors">
+          <div className="colors-palette">
             {colors.map(c => (
               <button
                 className={`color-picker-btn ${c} ${f.color === c ? 'color-active' : ''}`}
@@ -830,7 +850,7 @@ function Detail({ note, update, close }: any) {
 
         <div className="detail-footer-actions">
           <button
-            className={`complete ${f.status === 'HECHO' ? 'complete-reopen' : ''}`}
+            className={`btn-complete ${f.status === 'HECHO' ? 'complete-reopen' : ''}`}
             onClick={() =>
               save({
                 status: f.status === 'HECHO' ? 'PENDIENTE' : 'HECHO',

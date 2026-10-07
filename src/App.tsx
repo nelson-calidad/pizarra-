@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   LayoutGrid, SunMedium, ListTodo, CalendarDays, CircleCheckBig, Search, Plus,
   Pin, Clock, RotateCcw, Check, Settings, X, AlertCircle, Trash2, Edit3, Archive,
-  User, Users, Copy, Activity
+  User, Users, Copy, Activity, ChevronDown
 } from 'lucide-react'
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
 import './App.css'
@@ -256,7 +256,10 @@ export default function App() {
           <div className="workspace-tabs-list">
             <button
               className={`workspace-tab-item ${activeMember === 'Todos' ? 'active' : ''}`}
-              onClick={() => setActiveMember('Todos')}
+              onClick={() => {
+                setActiveMember('Todos')
+                if (view === 'done' || view === 'archived') setView('board')
+              }}
             >
               <Users size={15} strokeWidth={1.9} />
               <span className="workspace-tab-name">General (Todos)</span>
@@ -269,7 +272,10 @@ export default function App() {
               return (
                 <button
                   className={`workspace-tab-item ${activeMember === p ? 'active' : ''}`}
-                  onClick={() => setActiveMember(p)}
+                  onClick={() => {
+                    setActiveMember(p)
+                    if (view === 'done' || view === 'archived') setView('board')
+                  }}
                   key={p}
                 >
                   <User size={15} strokeWidth={1.9} />
@@ -328,17 +334,23 @@ export default function App() {
         <header className="app-header">
           <div className="current-workspace-indicator">
             <span className="current-workspace-label">Pestaña:</span>
-            <span className="current-workspace-badge">
-              {activeMember === 'Todos' ? (
-                <>
-                  <Users size={14} strokeWidth={2} /> Todos los miembros
-                </>
-              ) : (
-                <>
-                  <User size={14} strokeWidth={2} /> {activeMember}
-                </>
-              )}
-            </span>
+            <div className="workspace-dropdown-wrapper">
+              <select
+                className="current-workspace-select"
+                value={activeMember}
+                onChange={e => {
+                  setActiveMember(e.target.value)
+                  if (view === 'done' || view === 'archived') setView('board')
+                }}
+                title="Cambiar persona / espacio de trabajo"
+              >
+                <option value="Todos">👥 Todos los miembros</option>
+                {people.map(p => (
+                  <option value={p} key={p}>👤 {p}</option>
+                ))}
+              </select>
+              <ChevronDown size={14} strokeWidth={2} className="workspace-dropdown-arrow" />
+            </div>
           </div>
           <button className="search-box" onClick={() => setPalette(true)}>
             <Search size={17} strokeWidth={1.9} className="search-icon" />
@@ -372,6 +384,8 @@ export default function App() {
               select={setSelected}
               people={people}
               boardRef={board}
+              activeMember={activeMember}
+              setActiveMember={setActiveMember}
             />
           )}
           {view === 'today' && (
@@ -416,10 +430,19 @@ export default function App() {
             />
           )}
           {view === 'calendar' && <Calendar notes={memberNotes} select={setSelected} />}
+          {view === 'activity' && <ActivityView />}
         </div>
       </main>
 
-      {composer && <Composer close={() => setComposer(false)} create={create} people={people} addPerson={addPerson} />}
+      {composer && (
+        <Composer
+          close={() => setComposer(false)}
+          create={create}
+          people={people}
+          addPerson={addPerson}
+          defaultAssignee={activeMember !== 'Todos' ? activeMember : ''}
+        />
+      )}
       {palette && (
         <Palette
           notes={notes}
@@ -447,7 +470,7 @@ export default function App() {
   )
 }
 
-function Board({ notes, filter, setFilter, counts, query, setQuery, update, removeNote, select, people, boardRef }: any) {
+function Board({ notes, filter, setFilter, counts, query, setQuery, update, removeNote, select, people, boardRef, activeMember, setActiveMember }: any) {
   const filterList = [
     { key: 'Pendientes', count: counts[1] },
     { key: 'Hoy', count: counts[2] },
@@ -522,16 +545,33 @@ function Board({ notes, filter, setFilter, counts, query, setQuery, update, remo
                     />
                   ))
                 ) : (
-                  <div className="empty">
+                  <div className="empty" style={{ pointerEvents: 'auto' }}>
                     <div className="empty-icon-wrap">
                       <LayoutGrid size={32} strokeWidth={1.6} />
                     </div>
-                    <h2>{query || filter !== 'Todos' ? 'No hay notas con este filtro' : 'Tu pizarrón está vacío'}</h2>
+                    <h2>
+                      {activeMember !== 'Todos'
+                        ? `No hay notas asignadas a ${activeMember}`
+                        : query || filter !== 'Todos'
+                        ? 'No hay notas con este filtro'
+                        : 'Tu pizarrón está vacío'}
+                    </h2>
                     <p>
-                      {query || filter !== 'Todos'
+                      {activeMember !== 'Todos'
+                        ? 'Las notas sin responsable aparecen en el espacio General.'
+                        : query || filter !== 'Todos'
                         ? 'Probá cambiando la categoría o el filtro seleccionado.'
                         : 'Escribí algo que quieras recordar o creá una nueva nota.'}
                     </p>
+                    {activeMember !== 'Todos' && (
+                      <button
+                        className="btn-empty-switch"
+                        onClick={() => setActiveMember('Todos')}
+                      >
+                        <Users size={14} strokeWidth={2} />
+                        <span>Ver todas las notas (General)</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -651,7 +691,7 @@ function Card({ note, update, removeNote, select, people }: any) {
           onClick={() =>
             update(note.id, {
               status: note.status === 'HECHO' ? 'PENDIENTE' : 'HECHO',
-              completedAt: new Date().toISOString()
+              completedAt: note.status === 'HECHO' ? undefined : new Date().toISOString()
             })
           }
         >
@@ -686,7 +726,7 @@ function Card({ note, update, removeNote, select, people }: any) {
   )
 }
 
-function List({ title, subtitle, notes, update, removeNote, select, grouped }: any) {
+function List({ title, subtitle, notes, update, removeNote, select, grouped, showRestore }: any) {
   const late = notes.filter(overdue)
   const rest = notes.filter((n: Note) => !overdue(n))
 
@@ -709,16 +749,16 @@ function List({ title, subtitle, notes, update, removeNote, select, grouped }: a
       ) : (
         <>
           {grouped && late.length > 0 && (
-            <NoteList title="Vencidos" notes={late} update={update} removeNote={removeNote} select={select} isOverdueSection />
+            <NoteList title="Vencidos" notes={late} update={update} removeNote={removeNote} select={select} isOverdueSection showRestore={showRestore} />
           )}
-          <NoteList title={grouped && late.length > 0 ? 'Para hoy' : ''} notes={rest} update={update} removeNote={removeNote} select={select} />
+          <NoteList title={grouped && late.length > 0 ? 'Para hoy' : ''} notes={rest} update={update} removeNote={removeNote} select={select} showRestore={showRestore} />
         </>
       )}
     </section>
   )
 }
 
-function NoteList({ title, notes, update, removeNote, select, isOverdueSection }: any) {
+function NoteList({ title, notes, update, removeNote, select, isOverdueSection, showRestore }: any) {
   return (
     <div className="note-list">
       {title && (
@@ -735,7 +775,7 @@ function NoteList({ title, notes, update, removeNote, select, isOverdueSection }
               onClick={() =>
                 update(n.id, {
                   status: n.status === 'HECHO' ? 'PENDIENTE' : 'HECHO',
-                  completedAt: new Date().toISOString()
+                  completedAt: n.status === 'HECHO' ? undefined : new Date().toISOString()
                 })
               }
               title={n.status === 'HECHO' ? 'Marcar como pendiente' : 'Marcar como resuelta'}
@@ -762,10 +802,21 @@ function NoteList({ title, notes, update, removeNote, select, isOverdueSection }
               </div>
             </button>
             <div className="rem-actions">
-              <button className="postpone" onClick={() => update(n.id, { date: tomorrow })} title="Posponer a mañana">
-                <Clock size={13} strokeWidth={2} />
-                <span>Mañana</span>
-              </button>
+              {showRestore ? (
+                <button
+                  className="postpone"
+                  onClick={() => update(n.id, { status: 'PENDIENTE' })}
+                  title="Restaurar a pendientes"
+                >
+                  <RotateCcw size={13} strokeWidth={2} />
+                  <span>Restaurar</span>
+                </button>
+              ) : (
+                <button className="postpone" onClick={() => update(n.id, { date: tomorrow })} title="Posponer a mañana">
+                  <Clock size={13} strokeWidth={2} />
+                  <span>Mañana</span>
+                </button>
+              )}
               <button className="rem-icon-btn" onClick={() => select(n)} title="Editar">
                 <Edit3 size={14} strokeWidth={1.9} />
               </button>
@@ -893,10 +944,60 @@ function Calendar({ notes, select }: any) {
   )
 }
 
-function Composer({ close, create, people, addPerson }: any) {
+function ActivityView() {
+  const [list, setList] = useState<ActivityEntry[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchActivity().then(data => {
+      setList(data.reverse())
+      setLoading(false)
+    })
+  }, [])
+
+  return (
+    <section className="list-view">
+      <div className="heading">
+        <p className="subtitle">Historial de cambios y movimientos del equipo</p>
+        <div className="title-row">
+          <h1>Actividad</h1>
+          <span className="stat-pill">{list.length} registros</span>
+        </div>
+      </div>
+      <div style={{ maxWidth: 720, margin: '20px 0', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '24px' }}>
+        {loading ? (
+          <p className="nothing">Cargando actividad…</p>
+        ) : list.length === 0 ? (
+          <p className="nothing">No hay actividad registrada por el momento.</p>
+        ) : (
+          <div className="activity-timeline">
+            {list.map(a => (
+              <div className="activity-item" key={a.id}>
+                <span className="activity-dot" />
+                <div className="activity-text">
+                  <span style={{ fontWeight: 600, color: 'var(--text)' }}>{a.actor || 'Sistema'}</span>{' '}
+                  <span style={{ color: 'var(--text-secondary)' }}>{a.action}</span>{' '}
+                  <span style={{ fontWeight: 500, color: 'var(--accent)' }}>{a.detail}</span>
+                  {a.before && a.after && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {a.before} → {a.after}
+                    </div>
+                  )}
+                  <div className="activity-date">{new Date(a.createdAt).toLocaleString()}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function Composer({ close, create, people, addPerson, defaultAssignee }: any) {
   const [text, setText] = useState('')
   const [date, setDate] = useState<string | undefined>()
-  const [assignee, setAssignee] = useState<string>('')
+  const [assignee, setAssignee] = useState<string>(defaultAssignee || '')
   const [newPersonInput, setNewPersonInput] = useState('')
   const [showAddPerson, setShowAddPerson] = useState(false)
 
@@ -1299,7 +1400,7 @@ function Detail({ note, update, removeNote, archiveNote, people, addPerson, clos
             onClick={() =>
               save({
                 status: f.status === 'HECHO' ? 'PENDIENTE' : 'HECHO',
-                completedAt: new Date().toISOString()
+                completedAt: f.status === 'HECHO' ? undefined : new Date().toISOString()
               })
             }
           >

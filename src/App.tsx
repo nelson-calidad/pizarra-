@@ -17,7 +17,8 @@ import {
   Trash2,
   Edit3,
   Archive,
-  User
+  User,
+  Users
 } from 'lucide-react'
 import './App.css'
 
@@ -160,13 +161,21 @@ export default function App() {
   })
   const [view, setView] = useState<View>('board')
   const [filter, setFilter] = useState('Pendientes')
-  const [personFilter, setPersonFilter] = useState('Todos')
+  const [activeMember, setActiveMember] = useState<string>('Todos')
   const [people, setPeople] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('mi-tablero-people')
-      return saved ? JSON.parse(saved) : ['Nelson', 'Marcelo', 'Equipo']
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Aseguramos que 'Nelson' y 'Melisa Condori' siempre estén presentes
+          const set = new Set([...parsed, 'Nelson', 'Melisa Condori'])
+          return Array.from(set)
+        }
+      }
+      return ['Nelson', 'Melisa Condori', 'Marcelo', 'Equipo']
     } catch {
-      return ['Nelson', 'Marcelo', 'Equipo']
+      return ['Nelson', 'Melisa Condori', 'Marcelo', 'Equipo']
     }
   })
   const [selected, setSelected] = useState<Note | null>(null)
@@ -241,10 +250,10 @@ export default function App() {
       id: crypto.randomUUID(),
       text: text.trim(),
       status: 'PENDIENTE',
-      date,
+      date: normalizeDate(date),
       category: 'General',
       priority: 'NORMAL',
-      assignee: assignee || (personFilter !== 'Todos' ? personFilter : undefined),
+      assignee: assignee || (activeMember !== 'Todos' ? activeMember : undefined),
       color: 'yellow',
       pinned: false,
       x: Math.max(70, (r?.width || 800) / 2 - 132),
@@ -259,10 +268,16 @@ export default function App() {
     setSelected(n)
   }
 
-  const pending = notes.filter(n => n.status === 'PENDIENTE')
+  // Notas filtradas por el miembro activo (Pestaña actual: Todos, Nelson, Melisa Condori, etc.)
+  const memberNotes = useMemo(() => {
+    if (activeMember === 'Todos') return notes
+    return notes.filter(n => n.assignee === activeMember)
+  }, [notes, activeMember])
+
+  const pending = memberNotes.filter(n => n.status === 'PENDIENTE')
   const shown = useMemo(
     () =>
-      notes
+      memberNotes
         .filter(n =>
           filter === 'Pendientes'
             ? n.status === 'PENDIENTE'
@@ -278,9 +293,8 @@ export default function App() {
             ? n.status !== 'ARCHIVADO'
             : n.status === 'PENDIENTE'
         )
-        .filter(n => (personFilter === 'Todos' ? true : n.assignee === personFilter))
         .filter(n => !query || `${n.text} ${n.category} ${n.assignee || ''}`.toLowerCase().includes(query.toLowerCase())),
-    [notes, filter, personFilter, query]
+    [memberNotes, filter, query]
   )
 
   const nav: [View, React.ReactNode, string][] = [
@@ -301,6 +315,51 @@ export default function App() {
           <div className="brand-info">
             <span className="brand-title">Mi Tablero</span>
             <span className="brand-sub">Workspace</span>
+          </div>
+        </div>
+
+        <div className="sidebar-section">
+          <div className="sidebar-section-header">
+            <span className="sidebar-section-title">ESPACIO / PERSONA</span>
+            <button
+              className="btn-add-member-small"
+              onClick={() => {
+                const name = window.prompt('Nombre del nuevo miembro del equipo:')
+                if (name && name.trim()) {
+                  addPerson(name.trim())
+                  setActiveMember(name.trim())
+                }
+              }}
+              title="Agregar persona"
+            >
+              <Plus size={13} strokeWidth={2.4} />
+            </button>
+          </div>
+          <div className="workspace-tabs-list">
+            <button
+              className={`workspace-tab-item ${activeMember === 'Todos' ? 'active' : ''}`}
+              onClick={() => setActiveMember('Todos')}
+            >
+              <Users size={15} strokeWidth={1.9} />
+              <span className="workspace-tab-name">General (Todos)</span>
+              <span className="workspace-tab-count">
+                {notes.filter(n => n.status === 'PENDIENTE').length}
+              </span>
+            </button>
+            {people.map(p => {
+              const count = notes.filter(n => n.status === 'PENDIENTE' && n.assignee === p).length
+              return (
+                <button
+                  className={`workspace-tab-item ${activeMember === p ? 'active' : ''}`}
+                  onClick={() => setActiveMember(p)}
+                  key={p}
+                >
+                  <User size={15} strokeWidth={1.9} />
+                  <span className="workspace-tab-name">{p}</span>
+                  {count > 0 && <span className="workspace-tab-count">{count}</span>}
+                </button>
+              )
+            })}
           </div>
         </div>
 
@@ -336,7 +395,7 @@ export default function App() {
         <footer className="sidebar-footer">
           <div className="footer-status">
             <span className="status-indicator" />
-            <span>Sincronizado</span>
+            <span>Sincronizado con Sheets</span>
           </div>
           <div className="footer-action">
             <Settings size={15} strokeWidth={1.8} />
@@ -347,6 +406,20 @@ export default function App() {
 
       <main className="main-content">
         <header className="app-header">
+          <div className="current-workspace-indicator">
+            <span className="current-workspace-label">Pestaña:</span>
+            <span className="current-workspace-badge">
+              {activeMember === 'Todos' ? (
+                <>
+                  <Users size={14} strokeWidth={2} /> Todos los miembros
+                </>
+              ) : (
+                <>
+                  <User size={14} strokeWidth={2} /> {activeMember}
+                </>
+              )}
+            </span>
+          </div>
           <button className="search-box" onClick={() => setPalette(true)}>
             <Search size={17} strokeWidth={1.9} className="search-icon" />
             <span className="search-placeholder">Buscar notas, categorías…</span>
@@ -365,17 +438,13 @@ export default function App() {
               filter={filter}
               setFilter={setFilter}
               counts={[
-                notes.filter(n => n.status !== 'ARCHIVADO').length,
+                memberNotes.filter(n => n.status !== 'ARCHIVADO').length,
                 pending.length,
                 pending.filter(n => n.date === today).length,
                 pending.filter(overdue).length,
-                notes.filter(n => n.pinned && n.status !== 'ARCHIVADO').length,
-                notes.filter(n => n.status === 'HECHO').length
+                memberNotes.filter(n => n.pinned && n.status !== 'ARCHIVADO').length,
+                memberNotes.filter(n => n.status === 'HECHO').length
               ]}
-              personFilter={personFilter}
-              setPersonFilter={setPersonFilter}
-              people={people}
-              addPerson={addPerson}
               query={query}
               setQuery={setQuery}
               update={update}
@@ -386,7 +455,7 @@ export default function App() {
           )}
           {view === 'today' && (
             <List
-              title="Mi día"
+              title={activeMember === 'Todos' ? 'Mi día' : `Mi día · ${activeMember}`}
               subtitle="Lo que merece tu atención hoy."
               notes={pending.filter(n => overdue(n) || n.date === today)}
               update={update}
@@ -398,6 +467,7 @@ export default function App() {
           {view === 'reminders' && (
             <Reminders
               notes={pending}
+              title={activeMember === 'Todos' ? 'Mis recordatorios' : `Recordatorios · ${activeMember}`}
               update={update}
               removeNote={removeNote}
               select={setSelected}
@@ -405,15 +475,15 @@ export default function App() {
           )}
           {view === 'done' && (
             <List
-              title="Hechos"
+              title={activeMember === 'Todos' ? 'Hechos' : `Hechos · ${activeMember}`}
               subtitle="Todo lo que ya resolviste y completaste."
-              notes={notes.filter(n => n.status === 'HECHO')}
+              notes={memberNotes.filter(n => n.status === 'HECHO')}
               update={update}
               removeNote={removeNote}
               select={setSelected}
             />
           )}
-          {view === 'calendar' && <Calendar notes={notes} select={setSelected} />}
+          {view === 'calendar' && <Calendar notes={memberNotes} select={setSelected} />}
         </div>
       </main>
 
@@ -444,7 +514,7 @@ export default function App() {
   )
 }
 
-function Board({ notes, filter, setFilter, counts, personFilter, setPersonFilter, people, query, setQuery, update, removeNote, select, boardRef }: any) {
+function Board({ notes, filter, setFilter, counts, query, setQuery, update, removeNote, select, boardRef }: any) {
   const filterList = [
     { key: 'Pendientes', count: counts[1] },
     { key: 'Hoy', count: counts[2] },
@@ -473,21 +543,6 @@ function Board({ notes, filter, setFilter, counts, personFilter, setPersonFilter
                 )}
               </button>
             ))}
-          </div>
-
-          <div className="person-filter-group">
-            <User size={14} strokeWidth={2} className="person-filter-icon" />
-            <select
-              className="person-filter-select"
-              value={personFilter}
-              onChange={e => setPersonFilter(e.target.value)}
-              title="Filtrar por responsable"
-            >
-              <option value="Todos">Todas las personas</option>
-              {people.map((p: string) => (
-                <option value={p} key={p}>{p}</option>
-              ))}
-            </select>
           </div>
 
           {query && (
@@ -522,10 +577,10 @@ function Board({ notes, filter, setFilter, counts, personFilter, setPersonFilter
             <div className="empty-icon-wrap">
               <LayoutGrid size={32} strokeWidth={1.6} />
             </div>
-            <h2>{query || personFilter !== 'Todos' || filter !== 'Todos' ? 'No hay notas con este filtro' : 'Tu pizarrón está vacío'}</h2>
+            <h2>{query || filter !== 'Todos' ? 'No hay notas con este filtro' : 'Tu pizarrón está vacío'}</h2>
             <p>
-              {query || personFilter !== 'Todos' || filter !== 'Todos'
-                ? 'Probá cambiando la categoría, el responsable o el filtro seleccionado.'
+              {query || filter !== 'Todos'
+                ? 'Probá cambiando la categoría o el filtro seleccionado.'
                 : 'Escribí algo que quieras recordar o creá una nueva nota.'}
             </p>
           </div>
@@ -748,7 +803,7 @@ function NoteList({ title, notes, update, removeNote, select, isOverdueSection }
   )
 }
 
-function Reminders({ notes, update, removeNote, select }: any) {
+function Reminders({ notes, title, update, removeNote, select }: any) {
   const late = notes.filter(overdue)
   const todayNotes = notes.filter((n: Note) => n.date === today)
   const tomorrowNotes = notes.filter((n: Note) => n.date === tomorrow)
@@ -759,7 +814,7 @@ function Reminders({ notes, update, removeNote, select }: any) {
       <div className="heading">
         <p className="subtitle">Tus compromisos y pendientes ordenados</p>
         <div className="title-row">
-          <h1>Mis recordatorios</h1>
+          <h1>{title || 'Mis recordatorios'}</h1>
           <div className="stats-pills">
             <span className="stat-pill">{notes.length} pendientes</span>
             {late.length > 0 && <span className="stat-pill stat-pill-danger">{late.length} vencidas</span>}

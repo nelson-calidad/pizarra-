@@ -844,11 +844,21 @@ function Palette({ notes, close, select, go }: any) {
 
 function Detail({ note, update, removeNote, archiveNote, close }: any) {
   const [f, setF] = useState(note)
-  useEffect(() => setF(note), [note])
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved')
+  const debounceRef = useRef<any>(null)
+
+  useEffect(() => {
+    setF(note)
+  }, [note])
 
   const save = (x: any) => {
     setF((old: any) => ({ ...old, ...x }))
-    update(note.id, x)
+    setSaveStatus('saving')
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      update(note.id, x)
+      setSaveStatus('saved')
+    }, 400)
   }
 
   const colors = ['yellow', 'blue', 'green', 'rose', 'violet']
@@ -856,7 +866,13 @@ function Detail({ note, update, removeNote, archiveNote, close }: any) {
   return (
     <aside className="detail-panel">
       <div className="detail-header">
-        <small className="modal-tag">DETALLE DE NOTA</small>
+        <div className="detail-header-left">
+          <small className="modal-tag">DETALLE DE NOTA</small>
+          <span className={`save-badge ${saveStatus === 'saving' ? 'save-badge-saving' : 'save-badge-saved'}`}>
+            <span className="save-badge-dot" />
+            {saveStatus === 'saving' ? 'Guardando…' : 'Guardado'}
+          </span>
+        </div>
         <div className="detail-header-actions">
           <button
             className={`panel-icon-btn ${f.pinned ? 'is-active-pin' : ''}`}

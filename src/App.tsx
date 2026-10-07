@@ -46,8 +46,35 @@ type Note = {
 const today = new Date().toISOString().slice(0, 10)
 const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10)
 
+const normalizeDate = (d?: unknown): string | undefined => {
+  if (!d || typeof d !== 'string') return undefined
+  const trimmed = d.trim()
+  if (!trimmed) return undefined
+  // Si viene en formato ISO (ej: 2026-10-08T03:00:00.000Z), extraer solo YYYY-MM-DD
+  if (trimmed.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return trimmed.slice(0, 10)
+  }
+  return trimmed
+}
+
 const overdue = (n: Note) => n.status === 'PENDIENTE' && !!n.date && n.date < today
-const label = (d?: string) => !d ? 'Sin fecha' : d === today ? 'Hoy' : d === tomorrow ? 'Mañana' : new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short' }).format(new Date(d + 'T12:00:00'))
+
+const label = (d?: string) => {
+  if (!d) return 'Sin fecha'
+  const clean = normalizeDate(d)
+  if (!clean) return 'Sin fecha'
+  if (clean === today) return 'Hoy'
+  if (clean === tomorrow) return 'Mañana'
+  try {
+    const dt = new Date(clean + 'T12:00:00')
+    if (isNaN(dt.getTime())) return clean
+    return new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short' }).format(dt)
+  } catch {
+    return clean
+  }
+}
+
+
 const formatCalendarMonth = (date: Date) => {
   const raw = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' }).format(date)
   return raw.charAt(0).toUpperCase() + raw.slice(1).replace(/ De /g, ' de ')
@@ -99,15 +126,15 @@ const fromSheet = (n: any): Note => ({
   text: n.TEXTO || '',
   description: n.DESCRIPCION || '',
   status: n.ESTADO || 'PENDIENTE',
-  date: n.FECHA || undefined,
+  date: normalizeDate(n.FECHA),
   time: n.HORA || undefined,
   category: n.CATEGORIA || 'General',
   priority: n.PRIORIDAD || 'NORMAL',
   assignee: n.RESPONSABLE || undefined,
   color: n.COLOR || 'yellow',
   pinned: n.FIJADA === true || n.FIJADA === 'TRUE',
-  x: Number(n.X) || 120,
-  y: Number(n.Y) || 120,
+  x: Math.max(0, Number(n.X) || 120),
+  y: Math.max(0, Number(n.Y) || 120),
   width: Number(n.ANCHO) || 264,
   height: Number(n.ALTO) || 155,
   createdAt: n.CREADO_EN || new Date().toISOString(),
@@ -118,7 +145,15 @@ export default function App() {
   const [notes, setNotes] = useState<Note[]>(() => {
     try {
       const saved = localStorage.getItem('mi-tablero-notes')
-      return saved ? JSON.parse(saved) : []
+      if (!saved) return []
+      const parsed = JSON.parse(saved)
+      if (Array.isArray(parsed)) {
+        return parsed.map((n: Note) => ({
+          ...n,
+          date: normalizeDate(n.date)
+        }))
+      }
+      return []
     } catch {
       return []
     }

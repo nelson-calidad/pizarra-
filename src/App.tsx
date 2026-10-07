@@ -452,6 +452,7 @@ export default function App() {
               update={update}
               removeNote={removeNote}
               select={setSelected}
+              people={people}
               boardRef={board}
             />
           )}
@@ -516,7 +517,7 @@ export default function App() {
   )
 }
 
-function Board({ notes, filter, setFilter, counts, query, setQuery, update, removeNote, select, boardRef }: any) {
+function Board({ notes, filter, setFilter, counts, query, setQuery, update, removeNote, select, people, boardRef }: any) {
   const filterList = [
     { key: 'Pendientes', count: counts[1] },
     { key: 'Hoy', count: counts[2] },
@@ -571,6 +572,7 @@ function Board({ notes, filter, setFilter, counts, query, setQuery, update, remo
               update={update}
               removeNote={removeNote}
               select={select}
+              people={people}
               key={n.id}
             />
           ))
@@ -592,12 +594,13 @@ function Board({ notes, filter, setFilter, counts, query, setQuery, update, remo
   )
 }
 
-function Card({ note, update, removeNote, select }: any) {
+function Card({ note, update, removeNote, select, people }: any) {
   const start = useRef<any>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [showAssign, setShowAssign] = useState(false)
 
   const down = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest('button')) return
+    if ((e.target as HTMLElement).closest('button, select')) return
     start.current = { x: e.clientX, y: e.clientY, l: note.x, t: note.y }
     setIsDragging(true)
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
@@ -634,11 +637,33 @@ function Card({ note, update, removeNote, select }: any) {
             {note.priority}
           </span>
           <span className="category-pill">{note.category}</span>
-          {note.assignee && (
-            <span className="assignee-pill" title={`Asignado a: ${note.assignee}`}>
+          {/* Pill de responsable — clickeable para reasignar */}
+          {showAssign ? (
+            <select
+              autoFocus
+              className="card-assignee-select"
+              value={note.assignee || ''}
+              onChange={e => {
+                update(note.id, { assignee: e.target.value || undefined })
+                setShowAssign(false)
+              }}
+              onBlur={() => setShowAssign(false)}
+              onClick={e => e.stopPropagation()}
+            >
+              <option value="">Sin asignar</option>
+              {(people || []).map((p: string) => (
+                <option value={p} key={p}>{p}</option>
+              ))}
+            </select>
+          ) : (
+            <button
+              className={`assignee-pill assignee-pill-btn ${note.assignee ? '' : 'assignee-pill-empty'}`}
+              title="Clic para asignar responsable"
+              onClick={e => { e.stopPropagation(); setShowAssign(true) }}
+            >
               <User size={11} strokeWidth={2} />
-              <span>{note.assignee}</span>
-            </span>
+              <span>{note.assignee || 'Sin asignar'}</span>
+            </button>
           )}
         </div>
         {note.pinned && (

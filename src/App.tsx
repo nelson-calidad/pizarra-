@@ -341,6 +341,8 @@ export default function App() {
               setPersonFilter={setPersonFilter}
               people={people}
               addPerson={addPerson}
+              query={query}
+              setQuery={setQuery}
               update={update}
               removeNote={removeNote}
               select={setSelected}
@@ -407,7 +409,7 @@ export default function App() {
   )
 }
 
-function Board({ notes, filter, setFilter, counts, personFilter, setPersonFilter, people, update, removeNote, select, boardRef }: any) {
+function Board({ notes, filter, setFilter, counts, personFilter, setPersonFilter, people, query, setQuery, update, removeNote, select, boardRef }: any) {
   const filterList = [
     { key: 'Pendientes', count: counts[1] },
     { key: 'Hoy', count: counts[2] },
@@ -452,6 +454,15 @@ function Board({ notes, filter, setFilter, counts, personFilter, setPersonFilter
               ))}
             </select>
           </div>
+
+          {query && (
+            <div className="active-filter-badge" title="Filtro activo">
+              <span>Filtro: <b>{query}</b></span>
+              <button onClick={() => setQuery('')} title="Quitar filtro">
+                <X size={12} strokeWidth={2.4} />
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="canvas-zoom-control">
@@ -476,8 +487,12 @@ function Board({ notes, filter, setFilter, counts, personFilter, setPersonFilter
             <div className="empty-icon-wrap">
               <LayoutGrid size={32} strokeWidth={1.6} />
             </div>
-            <h2>Tu pizarrón está vacío</h2>
-            <p>Escribí algo que quieras recordar o creá una nueva nota.</p>
+            <h2>{query || personFilter !== 'Todos' || filter !== 'Todos' ? 'No hay notas con este filtro' : 'Tu pizarrón está vacío'}</h2>
+            <p>
+              {query || personFilter !== 'Todos' || filter !== 'Todos'
+                ? 'Probá cambiando la categoría, el responsable o el filtro seleccionado.'
+                : 'Escribí algo que quieras recordar o creá una nueva nota.'}
+            </p>
           </div>
         )}
       </div>
@@ -610,10 +625,18 @@ function List({ title, subtitle, notes, update, removeNote, select, grouped }: a
           </div>
         </div>
       </div>
-      {grouped && late.length > 0 && (
-        <NoteList title="Vencidos" notes={late} update={update} removeNote={removeNote} select={select} isOverdueSection />
+      {notes.length === 0 ? (
+        <div className="list-empty-state">
+          <p className="nothing">No hay notas en esta sección por el momento.</p>
+        </div>
+      ) : (
+        <>
+          {grouped && late.length > 0 && (
+            <NoteList title="Vencidos" notes={late} update={update} removeNote={removeNote} select={select} isOverdueSection />
+          )}
+          <NoteList title={grouped && late.length > 0 ? 'Para hoy' : ''} notes={rest} update={update} removeNote={removeNote} select={select} />
+        </>
       )}
-      <NoteList title={grouped ? 'Para hoy' : ''} notes={rest} update={update} removeNote={removeNote} select={select} />
     </section>
   )
 }
@@ -708,22 +731,30 @@ function Reminders({ notes, update, removeNote, select }: any) {
           </div>
         </div>
       </div>
-      {[
-        ['Vencidos', late, true],
-        ['Hoy', todayNotes, false],
-        ['Mañana', tomorrowNotes, false],
-        ['Sin fecha', noDateNotes, false]
-      ].map(([t, ns, isLate]: any) => (
-        <NoteList
-          title={t}
-          notes={ns}
-          update={update}
-          removeNote={removeNote}
-          select={select}
-          isOverdueSection={isLate}
-          key={t}
-        />
-      ))}
+      {notes.length === 0 ? (
+        <div className="list-empty-state">
+          <p className="nothing">No tenés recordatorios pendientes actualmente.</p>
+        </div>
+      ) : (
+        [
+          ['Vencidos', late, true],
+          ['Hoy', todayNotes, false],
+          ['Mañana', tomorrowNotes, false],
+          ['Sin fecha', noDateNotes, false]
+        ]
+          .filter(([, ns]: any) => ns.length > 0)
+          .map(([t, ns, isLate]: any) => (
+            <NoteList
+              title={t}
+              notes={ns}
+              update={update}
+              removeNote={removeNote}
+              select={select}
+              isOverdueSection={isLate}
+              key={t}
+            />
+          ))
+      )}
     </section>
   )
 }

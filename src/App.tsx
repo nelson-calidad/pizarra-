@@ -63,7 +63,11 @@ const apiUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL as string | undefined
 const remote = (action: string, id?: string, data?: unknown) =>
   !apiUrl
     ? Promise.resolve()
-    : fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action, id, data }) })
+    : fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, id, data })
+      })
         .then(r => r.json())
         .then(r => {
           if (!r.success) throw Error(r.error || 'Error de sincronización')
@@ -129,7 +133,16 @@ export default function App() {
     if (apiUrl) {
       fetch(`${apiUrl}?action=getNotes`)
         .then(r => r.json())
-        .then(r => r.success && setNotes(r.data.map(fromSheet)))
+        .then(r => {
+          if (r.success) {
+            if (r.data && r.data.length > 0) {
+              setNotes(r.data.map(fromSheet))
+            } else {
+              // Si la hoja está recién creada y vacía, inicializar con las notas actuales
+              notes.forEach(n => void remote('createNote', undefined, toSheet(n)))
+            }
+          }
+        })
         .catch(() => console.warn('No se pudo cargar Google Sheets; se usa el cache local'))
     }
   }, [])

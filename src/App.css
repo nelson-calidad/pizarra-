@@ -372,11 +372,51 @@
   z-index: 5;
 }
 
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  overflow-x: auto;
+}
+
 .filter-chips {
   display: flex;
   align-items: center;
   gap: 8px;
-  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.person-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 0 10px;
+  height: 34px;
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-xs);
+  transition: all var(--transition-fast);
+}
+
+.person-filter-group:hover {
+  border-color: #cbd5e1;
+  background: #ffffff;
+}
+
+.person-filter-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.person-filter-select {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: var(--font-sub);
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
 }
 
 .filter-chip {
@@ -623,6 +663,31 @@
   background: rgba(255, 255, 255, 0.55);
   padding: 2px 8px;
   border-radius: var(--radius-full);
+}
+
+.assignee-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.85);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.rem-assignee-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px 7px;
+  border-radius: var(--radius-sm);
 }
 
 .pin-badge {
@@ -1754,4 +1819,100 @@
     font-size: 9.5px;
     padding: 2px 4px;
   }
+}
+
+/* Composer Assignee Pills */
+.composer-assignee-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.composer-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.composer-assignee-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.pill-assignee {
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.pill-assignee:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pill-assignee-active {
+  background: var(--accent);
+  color: #fff !important;
+  border-color: var(--accent);
+}
+
+.pill-assignee-add {
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px dashed var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.pill-assignee-add:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.inline-add-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inline-add-person input {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-size: 12px;
+  width: 110px;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.inline-add-person input:focus {
+  border-color: var(--accent);
+}
+
+.inline-add-person button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
 }

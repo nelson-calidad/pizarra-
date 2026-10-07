@@ -16,7 +16,8 @@ import {
   AlertCircle,
   Trash2,
   Edit3,
-  Archive
+  Archive,
+  User
 } from 'lucide-react'
 import './App.css'
 
@@ -31,6 +32,7 @@ type Note = {
   time?: string
   category: string
   priority: string
+  assignee?: string
   color: string
   pinned: boolean
   x: number
@@ -78,6 +80,7 @@ const toSheet = (n: Partial<Note>) =>
         time: 'HORA',
         category: 'CATEGORIA',
         priority: 'PRIORIDAD',
+        assignee: 'RESPONSABLE',
         color: 'COLOR',
         pinned: 'FIJADA',
         x: 'X',
@@ -100,6 +103,7 @@ const fromSheet = (n: any): Note => ({
   time: n.HORA || undefined,
   category: n.CATEGORIA || 'General',
   priority: n.PRIORIDAD || 'NORMAL',
+  assignee: n.RESPONSABLE || undefined,
   color: n.COLOR || 'yellow',
   pinned: n.FIJADA === true || n.FIJADA === 'TRUE',
   x: Number(n.X) || 120,
@@ -121,6 +125,15 @@ export default function App() {
   })
   const [view, setView] = useState<View>('board')
   const [filter, setFilter] = useState('Pendientes')
+  const [personFilter, setPersonFilter] = useState('Todos')
+  const [people, setPeople] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('mi-tablero-people')
+      return saved ? JSON.parse(saved) : ['Nelson', 'Marcelo', 'Equipo']
+    } catch {
+      return ['Nelson', 'Marcelo', 'Equipo']
+    }
+  })
   const [selected, setSelected] = useState<Note | null>(null)
   const [composer, setComposer] = useState(false)
   const [palette, setPalette] = useState(false)
@@ -128,6 +141,7 @@ export default function App() {
   const board = useRef<HTMLDivElement>(null)
 
   useEffect(() => localStorage.setItem('mi-tablero-notes', JSON.stringify(notes)), [notes])
+  useEffect(() => localStorage.setItem('mi-tablero-people', JSON.stringify(people)), [people])
 
   useEffect(() => {
     if (apiUrl) {
@@ -135,7 +149,6 @@ export default function App() {
         .then(r => r.json())
         .then(r => {
           if (r.success && Array.isArray(r.data)) {
-            // Refleja exactamente lo que hay en Google Sheets (si está vacío, queda vacío)
             setNotes(r.data.map(fromSheet))
           }
         })
@@ -179,7 +192,14 @@ export default function App() {
     if (selected?.id === id) setSelected(null)
   }
 
-  const create = (text: string, date?: string) => {
+  const addPerson = (name: string) => {
+    const trimmed = name.trim()
+    if (trimmed && !people.includes(trimmed)) {
+      setPeople(prev => [...prev, trimmed])
+    }
+  }
+
+  const create = (text: string, date?: string, assignee?: string) => {
     if (!text.trim()) return
     const r = board.current?.getBoundingClientRect()
     const n: Note = {
@@ -189,6 +209,7 @@ export default function App() {
       date,
       category: 'General',
       priority: 'NORMAL',
+      assignee: assignee || (personFilter !== 'Todos' ? personFilter : undefined),
       color: 'yellow',
       pinned: false,
       x: Math.max(70, (r?.width || 800) / 2 - 132),
@@ -222,8 +243,9 @@ export default function App() {
             ? n.status !== 'ARCHIVADO'
             : n.status === 'PENDIENTE'
         )
-        .filter(n => !query || `${n.text} ${n.category}`.toLowerCase().includes(query.toLowerCase())),
-    [notes, filter, query]
+        .filter(n => (personFilter === 'Todos' ? true : n.assignee === personFilter))
+        .filter(n => !query || `${n.text} ${n.category} ${n.assignee || ''}`.toLowerCase().includes(query.toLowerCase())),
+    [notes, filter, personFilter, query]
   )
 
   const nav: [View, React.ReactNode, string][] = [
@@ -315,6 +337,10 @@ export default function App() {
                 notes.filter(n => n.pinned && n.status !== 'ARCHIVADO').length,
                 notes.filter(n => n.status === 'HECHO').length
               ]}
+              personFilter={personFilter}
+              setPersonFilter={setPersonFilter}
+              people={people}
+              addPerson={addPerson}
               update={update}
               removeNote={removeNote}
               select={setSelected}
@@ -354,7 +380,7 @@ export default function App() {
         </div>
       </main>
 
-      {composer && <Composer close={() => setComposer(false)} create={create} />}
+      {composer && <Composer close={() => setComposer(false)} create={create} people={people} addPerson={addPerson} />}
       {palette && (
         <Palette
           notes={notes}
@@ -372,6 +398,8 @@ export default function App() {
           update={update}
           removeNote={removeNote}
           archiveNote={archiveNote}
+          people={people}
+          addPerson={addPerson}
           close={() => setSelected(null)}
         />
       )}
@@ -379,7 +407,7 @@ export default function App() {
   )
 }
 
-function Board({ notes, filter, setFilter, counts, update, removeNote, select, boardRef }: any) {
+function Board({ notes, filter, setFilter, counts, personFilter, setPersonFilter, people, update, removeNote, select, boardRef }: any) {
   const filterList = [
     { key: 'Pendientes', count: counts[1] },
     { key: 'Hoy', count: counts[2] },
@@ -392,22 +420,40 @@ function Board({ notes, filter, setFilter, counts, update, removeNote, select, b
   return (
     <section className="board-page">
       <div className="toolbar">
-        <div className="filter-chips">
-          {filterList.map(item => (
-            <button
-              className={`filter-chip ${filter === item.key ? 'chosen' : ''}`}
-              onClick={() => setFilter(item.key)}
-              key={item.key}
+        <div className="toolbar-left">
+          <div className="filter-chips">
+            {filterList.map(item => (
+              <button
+                className={`filter-chip ${filter === item.key ? 'chosen' : ''}`}
+                onClick={() => setFilter(item.key)}
+                key={item.key}
+              >
+                <span>{item.key}</span>
+                {typeof item.count === 'number' && item.count > 0 && (
+                  <span className={`chip-badge ${item.key === 'Vencidos' && item.count > 0 ? 'badge-danger' : ''}`}>
+                    {item.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          <div className="person-filter-group">
+            <User size={14} strokeWidth={2} className="person-filter-icon" />
+            <select
+              className="person-filter-select"
+              value={personFilter}
+              onChange={e => setPersonFilter(e.target.value)}
+              title="Filtrar por responsable"
             >
-              <span>{item.key}</span>
-              {typeof item.count === 'number' && item.count > 0 && (
-                <span className={`chip-badge ${item.key === 'Vencidos' && item.count > 0 ? 'badge-danger' : ''}`}>
-                  {item.count}
-                </span>
-              )}
-            </button>
-          ))}
+              <option value="Todos">Todas las personas</option>
+              {people.map((p: string) => (
+                <option value={p} key={p}>{p}</option>
+              ))}
+            </select>
+          </div>
         </div>
+
         <div className="canvas-zoom-control">
           <button className="zoom-btn" title="Alejar">−</button>
           <span className="zoom-value">100%</span>
@@ -481,6 +527,12 @@ function Card({ note, update, removeNote, select }: any) {
             {note.priority}
           </span>
           <span className="category-pill">{note.category}</span>
+          {note.assignee && (
+            <span className="assignee-pill" title={`Asignado a: ${note.assignee}`}>
+              <User size={11} strokeWidth={2} />
+              <span>{note.assignee}</span>
+            </span>
+          )}
         </div>
         {note.pinned && (
           <span className="pin-badge" title="Nota fijada">
@@ -601,6 +653,12 @@ function NoteList({ title, notes, update, removeNote, select, isOverdueSection }
                 {n.time && <span>· {n.time}</span>}
                 <span className="rem-cat-badge">{n.category}</span>
                 <span className={`rem-prio prio-${n.priority.toLowerCase()}`}>{n.priority}</span>
+                {n.assignee && (
+                  <span className="rem-assignee-badge">
+                    <User size={10} strokeWidth={2} />
+                    {n.assignee}
+                  </span>
+                )}
               </div>
             </button>
             <div className="rem-actions">
@@ -727,9 +785,12 @@ function Calendar({ notes, select }: any) {
   )
 }
 
-function Composer({ close, create }: any) {
+function Composer({ close, create, people, addPerson }: any) {
   const [text, setText] = useState('')
   const [date, setDate] = useState<string | undefined>()
+  const [assignee, setAssignee] = useState<string>('')
+  const [newPersonInput, setNewPersonInput] = useState('')
+  const [showAddPerson, setShowAddPerson] = useState(false)
 
   return (
     <div className="overlay" onClick={e => e.target === e.currentTarget && close()}>
@@ -737,7 +798,7 @@ function Composer({ close, create }: any) {
         className="composer-modal"
         onSubmit={e => {
           e.preventDefault()
-          create(text, date)
+          create(text, date, assignee || undefined)
         }}
       >
         <button type="button" className="modal-close-btn" onClick={close} title="Cerrar">
@@ -751,6 +812,75 @@ function Composer({ close, create }: any) {
           onChange={e => setText(e.target.value)}
           placeholder="¿Qué querés recordar?"
         />
+
+        <div className="composer-assignee-row">
+          <span className="composer-label">
+            <User size={13} strokeWidth={2} /> Responsable:
+          </span>
+          <div className="composer-assignee-pills">
+            <button
+              type="button"
+              className={`pill-assignee ${!assignee ? 'pill-assignee-active' : ''}`}
+              onClick={() => setAssignee('')}
+            >
+              Sin asignar
+            </button>
+            {people.map((p: string) => (
+              <button
+                type="button"
+                className={`pill-assignee ${assignee === p ? 'pill-assignee-active' : ''}`}
+                onClick={() => setAssignee(p)}
+                key={p}
+              >
+                {p}
+              </button>
+            ))}
+            {!showAddPerson ? (
+              <button
+                type="button"
+                className="pill-assignee-add"
+                onClick={() => setShowAddPerson(true)}
+                title="Agregar persona"
+              >
+                + Persona
+              </button>
+            ) : (
+              <div className="inline-add-person">
+                <input
+                  type="text"
+                  placeholder="Nombre..."
+                  value={newPersonInput}
+                  onChange={e => setNewPersonInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      if (newPersonInput.trim()) {
+                        addPerson(newPersonInput.trim())
+                        setAssignee(newPersonInput.trim())
+                        setNewPersonInput('')
+                        setShowAddPerson(false)
+                      }
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newPersonInput.trim()) {
+                      addPerson(newPersonInput.trim())
+                      setAssignee(newPersonInput.trim())
+                      setNewPersonInput('')
+                      setShowAddPerson(false)
+                    }
+                  }}
+                >
+                  ✓
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="composer-bottom">
           <div className="quick-dates">
             <button
@@ -842,7 +972,7 @@ function Palette({ notes, close, select, go }: any) {
   )
 }
 
-function Detail({ note, update, removeNote, archiveNote, close }: any) {
+function Detail({ note, update, removeNote, archiveNote, people, addPerson, close }: any) {
   const [f, setF] = useState(note)
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved')
   const debounceRef = useRef<any>(null)
@@ -934,6 +1064,30 @@ function Detail({ note, update, removeNote, archiveNote, close }: any) {
               {['BAJA', 'NORMAL', 'ALTA', 'URGENTE'].map(x => (
                 <option key={x}>{x}</option>
               ))}
+            </select>
+          </label>
+          <label className="field-row">
+            <span className="field-label">Responsable</span>
+            <select
+              className="field-select"
+              value={f.assignee || ''}
+              onChange={e => {
+                if (e.target.value === '__add__') {
+                  const name = window.prompt('Nombre de la persona:')
+                  if (name && name.trim()) {
+                    addPerson(name.trim())
+                    save({ assignee: name.trim() })
+                  }
+                } else {
+                  save({ assignee: e.target.value || undefined })
+                }
+              }}
+            >
+              <option value="">Sin asignar</option>
+              {people.map((p: string) => (
+                <option value={p} key={p}>{p}</option>
+              ))}
+              <option value="__add__">+ Agregar persona...</option>
             </select>
           </label>
         </div>

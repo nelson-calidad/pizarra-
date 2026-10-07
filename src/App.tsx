@@ -162,20 +162,18 @@ export default function App() {
   const [view, setView] = useState<View>('board')
   const [filter, setFilter] = useState('Pendientes')
   const [activeMember, setActiveMember] = useState<string>('Todos')
+  // Miembros fijos del equipo — hardcodeados para que aparezcan en cualquier dispositivo.
+  // Si se agrega alguien nuevo con "+", se une a esta lista base.
+  const BASE_PEOPLE = ['Nelson', 'Melisa Condori', 'Marcelo', 'Equipo']
   const [people, setPeople] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('mi-tablero-people')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Aseguramos que 'Nelson' y 'Melisa Condori' siempre estén presentes
-          const set = new Set([...parsed, 'Nelson', 'Melisa Condori'])
-          return Array.from(set)
-        }
-      }
-      return ['Nelson', 'Melisa Condori', 'Marcelo', 'Equipo']
+      const saved = localStorage.getItem('mi-tablero-people-extra')
+      const extra: string[] = saved ? JSON.parse(saved) : []
+      // Unimos los base con los extras guardados, sin duplicados
+      const set = new Set([...BASE_PEOPLE, ...(Array.isArray(extra) ? extra : [])])
+      return Array.from(set)
     } catch {
-      return ['Nelson', 'Melisa Condori', 'Marcelo', 'Equipo']
+      return BASE_PEOPLE
     }
   })
   const [selected, setSelected] = useState<Note | null>(null)
@@ -185,7 +183,11 @@ export default function App() {
   const board = useRef<HTMLDivElement>(null)
 
   useEffect(() => localStorage.setItem('mi-tablero-notes', JSON.stringify(notes)), [notes])
-  useEffect(() => localStorage.setItem('mi-tablero-people', JSON.stringify(people)), [people])
+  // Guardamos solo los miembros extras (los que NO son de la lista base) en localStorage
+  useEffect(() => {
+    const extras = people.filter(p => !BASE_PEOPLE.includes(p))
+    localStorage.setItem('mi-tablero-people-extra', JSON.stringify(extras))
+  }, [people])
 
   useEffect(() => {
     if (apiUrl) {

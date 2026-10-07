@@ -487,7 +487,6 @@ function Board({ notes, filter, setFilter, counts, query, setQuery, update, remo
             </div>
           )}
         </div>
-
       </div>
       <TransformWrapper
         initialScale={1}
@@ -498,14 +497,19 @@ function Board({ notes, filter, setFilter, counts, query, setQuery, update, remo
         doubleClick={{ disabled: true }}
       >
         {({ zoomIn, zoomOut, resetTransform, state }) => (
-          <>
-            <div className="canvas-zoom-control" style={{ position: 'absolute', top: '16px', right: '16px', zIndex: 100 }}>
+          <div className="board-wrapper" style={{ position: 'relative', flex: 1, width: '100%', height: '100%', overflow: 'hidden' }}>
+            <div className="canvas-zoom-control" style={{ position: 'absolute', top: '16px', right: '24px', zIndex: 100 }}>
               <button className="zoom-btn" onClick={() => zoomOut()} title="Alejar">−</button>
               <button className="zoom-value" onClick={() => resetTransform()}>{Math.round(state.scale * 100)}%</button>
               <button className="zoom-btn" onClick={() => zoomIn()} title="Acercar">+</button>
             </div>
-            <TransformComponent wrapperClass="board" contentClass="board-canvas">
-              <div ref={boardRef} style={{ width: '100%', height: '100%' }}>
+            <TransformComponent
+              wrapperStyle={{ width: '100%', height: '100%' }}
+              contentStyle={{ width: '3000px', height: '2000px' }}
+              wrapperClass="board"
+              contentClass="board-canvas"
+            >
+              <div ref={boardRef} style={{ width: '3000px', height: '2000px', position: 'relative' }}>
                 {notes.length ? (
                   notes.map((n: Note) => (
                     <Card
@@ -532,7 +536,7 @@ function Board({ notes, filter, setFilter, counts, query, setQuery, update, remo
                 )}
               </div>
             </TransformComponent>
-          </>
+          </div>
         )}
       </TransformWrapper>
     </section>

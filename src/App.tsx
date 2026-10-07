@@ -43,15 +43,6 @@ type Note = {
 
 const today = new Date().toISOString().slice(0, 10)
 const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10)
-const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10)
-
-const seed: Note[] = [
-  { id: '1', text: 'Revisar resultados SSI', status: 'PENDIENTE', date: today, time: '15:00', category: 'Ventas', priority: 'ALTA', color: 'yellow', pinned: true, x: 90, y: 80, width: 264, height: 160, createdAt: today },
-  { id: '2', text: 'Validar tiempos de gestoría', status: 'PENDIENTE', date: today, category: 'Calidad', priority: 'NORMAL', color: 'blue', pinned: false, x: 420, y: 190, width: 264, height: 155, createdAt: today },
-  { id: '3', text: 'Hablar con Marcelo por reclamo', status: 'PENDIENTE', date: yesterday, category: 'Postventa', priority: 'URGENTE', color: 'rose', pinned: false, x: 740, y: 90, width: 270, height: 165, createdAt: yesterday },
-  { id: '4', text: 'IDEA: mejorar mapa de procesos', status: 'PENDIENTE', category: 'Ideas', priority: 'BAJA', color: 'violet', pinned: false, x: 200, y: 440, width: 264, height: 155, createdAt: today },
-  { id: '5', text: 'Actualizar procedimiento de entrega', status: 'HECHO', date: today, category: 'Calidad', priority: 'NORMAL', color: 'green', pinned: false, x: 590, y: 410, width: 264, height: 155, createdAt: today, completedAt: today }
-]
 
 const overdue = (n: Note) => n.status === 'PENDIENTE' && !!n.date && n.date < today
 const label = (d?: string) => !d ? 'Sin fecha' : d === today ? 'Hoy' : d === tomorrow ? 'Mañana' : new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short' }).format(new Date(d + 'T12:00:00'))
@@ -120,7 +111,14 @@ const fromSheet = (n: any): Note => ({
 })
 
 export default function App() {
-  const [notes, setNotes] = useState<Note[]>(() => JSON.parse(localStorage.getItem('mi-tablero-notes') || 'null') ?? seed)
+  const [notes, setNotes] = useState<Note[]>(() => {
+    try {
+      const saved = localStorage.getItem('mi-tablero-notes')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
   const [view, setView] = useState<View>('board')
   const [filter, setFilter] = useState('Pendientes')
   const [selected, setSelected] = useState<Note | null>(null)
@@ -136,13 +134,9 @@ export default function App() {
       fetch(`${apiUrl}?action=getNotes`)
         .then(r => r.json())
         .then(r => {
-          if (r.success) {
-            if (r.data && r.data.length > 0) {
-              setNotes(r.data.map(fromSheet))
-            } else {
-              // Si la hoja está recién creada y vacía, inicializar con las notas actuales
-              notes.forEach(n => void remote('createNote', undefined, toSheet(n)))
-            }
+          if (r.success && Array.isArray(r.data)) {
+            // Refleja exactamente lo que hay en Google Sheets (si está vacío, queda vacío)
+            setNotes(r.data.map(fromSheet))
           }
         })
         .catch(() => console.warn('No se pudo cargar Google Sheets; se usa el cache local'))

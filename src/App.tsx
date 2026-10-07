@@ -158,9 +158,13 @@ export default function App() {
 
   const create = (text: string, date?: string, assignee?: string) => {
     if (!text.trim()) return
-    const r = board.current?.getBoundingClientRect()
-    // Distribuir nuevas notas en la zona visible con ligero desplazamiento para que no se superpongan exactamente
-    const offset = (notes.length % 6) * 28
+    // Posicionar la nueva nota cómodamente en el área principal visible
+    // Si ya hay notas, colocamos en cascada ordenada (80, 360, 640...)
+    const colIndex = notes.length % 3
+    const rowIndex = Math.floor((notes.length % 9) / 3)
+    const newX = 80 + colIndex * 280
+    const newY = 120 + rowIndex * 180
+
     const n: Note = {
       id: crypto.randomUUID(),
       text: text.trim(),
@@ -171,8 +175,8 @@ export default function App() {
       assignee: assignee || (activeMember !== 'Todos' ? activeMember : undefined),
       color: 'yellow',
       pinned: false,
-      x: Math.max(80, Math.min(1200, ((r?.width || 800) / 2 - 132) + offset)),
-      y: Math.max(80, Math.min(800, ((r?.height || 600) / 2 - 78) + offset)),
+      x: newX,
+      y: newY,
       width: 264,
       height: 155,
       createdAt: new Date().toISOString()
@@ -593,7 +597,7 @@ function Board({ notes, filter, setFilter, counts, query, setQuery, update, remo
           <div className="toolbar-quick-notes">
             <span className="quick-notes-label">Ir a nota:</span>
             <div className="quick-notes-chips">
-              {notes.slice(0, 4).map((n: Note) => (
+              {notes.slice(0, 8).map((n: Note) => (
                 <button
                   key={n.id}
                   className="quick-note-btn"

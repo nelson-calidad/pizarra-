@@ -9,12 +9,14 @@ import {
   Plus,
   Pin,
   Clock,
-  MoreHorizontal,
   RotateCcw,
   Check,
   Settings,
   X,
-  AlertCircle
+  AlertCircle,
+  Trash2,
+  Edit3,
+  Archive
 } from 'lucide-react'
 import './App.css'
 
@@ -172,6 +174,17 @@ export default function App() {
     void remote('updateNote', id, toSheet(data)).catch(() => console.warn('Error de sincronización'))
   }
 
+  const removeNote = (id: string) => {
+    setNotes(x => x.filter(n => n.id !== id))
+    if (selected?.id === id) setSelected(null)
+    void remote('deleteNote', id).catch(() => console.warn('Error al eliminar en Google Sheets'))
+  }
+
+  const archiveNote = (id: string) => {
+    update(id, { status: 'ARCHIVADO' })
+    if (selected?.id === id) setSelected(null)
+  }
+
   const create = (text: string, date?: string) => {
     if (!text.trim()) return
     const r = board.current?.getBoundingClientRect()
@@ -309,6 +322,7 @@ export default function App() {
                 notes.filter(n => n.status === 'HECHO').length
               ]}
               update={update}
+              removeNote={removeNote}
               select={setSelected}
               boardRef={board}
             />
@@ -319,17 +333,26 @@ export default function App() {
               subtitle="Lo que merece tu atención hoy."
               notes={pending.filter(n => overdue(n) || n.date === today)}
               update={update}
+              removeNote={removeNote}
               select={setSelected}
               grouped
             />
           )}
-          {view === 'reminders' && <Reminders notes={pending} update={update} select={setSelected} />}
+          {view === 'reminders' && (
+            <Reminders
+              notes={pending}
+              update={update}
+              removeNote={removeNote}
+              select={setSelected}
+            />
+          )}
           {view === 'done' && (
             <List
               title="Hechos"
               subtitle="Todo lo que ya resolviste y completaste."
               notes={notes.filter(n => n.status === 'HECHO')}
               update={update}
+              removeNote={removeNote}
               select={setSelected}
             />
           )}
@@ -353,6 +376,8 @@ export default function App() {
         <Detail
           note={notes.find(n => n.id === selected.id) || selected}
           update={update}
+          removeNote={removeNote}
+          archiveNote={archiveNote}
           close={() => setSelected(null)}
         />
       )}
@@ -360,7 +385,7 @@ export default function App() {
   )
 }
 
-function Board({ notes, filter, setFilter, counts, update, select, boardRef }: any) {
+function Board({ notes, filter, setFilter, counts, update, removeNote, select, boardRef }: any) {
   const filterList = [
     { key: 'Pendientes', count: counts[1] },
     { key: 'Hoy', count: counts[2] },
@@ -397,7 +422,15 @@ function Board({ notes, filter, setFilter, counts, update, select, boardRef }: a
       </div>
       <div className="board" ref={boardRef}>
         {notes.length ? (
-          notes.map((n: Note) => <Card note={n} update={update} select={select} key={n.id} />)
+          notes.map((n: Note) => (
+            <Card
+              note={n}
+              update={update}
+              removeNote={removeNote}
+              select={select}
+              key={n.id}
+            />
+          ))
         ) : (
           <div className="empty">
             <div className="empty-icon-wrap">
@@ -412,7 +445,7 @@ function Board({ notes, filter, setFilter, counts, update, select, boardRef }: a
   )
 }
 
-function Card({ note, update, select }: any) {
+function Card({ note, update, removeNote, select }: any) {
   const start = useRef<any>(null)
   const [isDragging, setIsDragging] = useState(false)
 
@@ -494,15 +527,28 @@ function Card({ note, update, select }: any) {
             </>
           )}
         </button>
-        <button className="btn-action-more" onClick={() => select(note)} title="Detalles">
-          <MoreHorizontal size={14} strokeWidth={2} />
-        </button>
+        <div className="actions-right">
+          <button className="btn-action-icon" onClick={() => select(note)} title="Editar nota">
+            <Edit3 size={13} strokeWidth={2} />
+          </button>
+          <button
+            className="btn-action-icon btn-action-delete"
+            onClick={() => {
+              if (window.confirm('¿Seguro que querés eliminar esta nota?')) {
+                removeNote(note.id)
+              }
+            }}
+            title="Eliminar nota"
+          >
+            <Trash2 size={13} strokeWidth={2} />
+          </button>
+        </div>
       </div>
     </article>
   )
 }
 
-function List({ title, subtitle, notes, update, select, grouped }: any) {
+function List({ title, subtitle, notes, update, removeNote, select, grouped }: any) {
   const late = notes.filter(overdue)
   const rest = notes.filter((n: Note) => !overdue(n))
 
@@ -519,14 +565,14 @@ function List({ title, subtitle, notes, update, select, grouped }: any) {
         </div>
       </div>
       {grouped && late.length > 0 && (
-        <NoteList title="Vencidos" notes={late} update={update} select={select} isOverdueSection />
+        <NoteList title="Vencidos" notes={late} update={update} removeNote={removeNote} select={select} isOverdueSection />
       )}
-      <NoteList title={grouped ? 'Para hoy' : ''} notes={rest} update={update} select={select} />
+      <NoteList title={grouped ? 'Para hoy' : ''} notes={rest} update={update} removeNote={removeNote} select={select} />
     </section>
   )
 }
 
-function NoteList({ title, notes, update, select, isOverdueSection }: any) {
+function NoteList({ title, notes, update, removeNote, select, isOverdueSection }: any) {
   return (
     <div className="note-list">
       {title && (
@@ -563,10 +609,26 @@ function NoteList({ title, notes, update, select, isOverdueSection }: any) {
                 <span className={`rem-prio prio-${n.priority.toLowerCase()}`}>{n.priority}</span>
               </div>
             </button>
-            <button className="postpone" onClick={() => update(n.id, { date: tomorrow })}>
-              <Clock size={13} strokeWidth={2} />
-              <span>Mañana</span>
-            </button>
+            <div className="rem-actions">
+              <button className="postpone" onClick={() => update(n.id, { date: tomorrow })} title="Posponer a mañana">
+                <Clock size={13} strokeWidth={2} />
+                <span>Mañana</span>
+              </button>
+              <button className="rem-icon-btn" onClick={() => select(n)} title="Editar">
+                <Edit3 size={14} strokeWidth={1.9} />
+              </button>
+              <button
+                className="rem-icon-btn rem-icon-delete"
+                onClick={() => {
+                  if (window.confirm('¿Eliminar esta nota?')) {
+                    removeNote(n.id)
+                  }
+                }}
+                title="Eliminar"
+              >
+                <Trash2 size={14} strokeWidth={1.9} />
+              </button>
+            </div>
           </div>
         ))
       ) : (
@@ -576,7 +638,7 @@ function NoteList({ title, notes, update, select, isOverdueSection }: any) {
   )
 }
 
-function Reminders({ notes, update, select }: any) {
+function Reminders({ notes, update, removeNote, select }: any) {
   const late = notes.filter(overdue)
   const todayNotes = notes.filter((n: Note) => n.date === today)
   const tomorrowNotes = notes.filter((n: Note) => n.date === tomorrow)
@@ -600,7 +662,15 @@ function Reminders({ notes, update, select }: any) {
         ['Mañana', tomorrowNotes, false],
         ['Sin fecha', noDateNotes, false]
       ].map(([t, ns, isLate]: any) => (
-        <NoteList title={t} notes={ns} update={update} select={select} isOverdueSection={isLate} key={t} />
+        <NoteList
+          title={t}
+          notes={ns}
+          update={update}
+          removeNote={removeNote}
+          select={select}
+          isOverdueSection={isLate}
+          key={t}
+        />
       ))}
     </section>
   )
@@ -778,7 +848,7 @@ function Palette({ notes, close, select, go }: any) {
   )
 }
 
-function Detail({ note, update, close }: any) {
+function Detail({ note, update, removeNote, archiveNote, close }: any) {
   const [f, setF] = useState(note)
   useEffect(() => setF(note), [note])
 
@@ -793,9 +863,18 @@ function Detail({ note, update, close }: any) {
     <aside className="detail-panel">
       <div className="detail-header">
         <small className="modal-tag">DETALLE DE NOTA</small>
-        <button className="panel-close-btn" onClick={close} title="Cerrar panel">
-          <X size={18} strokeWidth={2} />
-        </button>
+        <div className="detail-header-actions">
+          <button
+            className={`panel-icon-btn ${f.pinned ? 'is-active-pin' : ''}`}
+            onClick={() => save({ pinned: !f.pinned })}
+            title={f.pinned ? 'Desfijar de la pizarra' : 'Fijar en la pizarra'}
+          >
+            <Pin size={16} strokeWidth={2.2} />
+          </button>
+          <button className="panel-close-btn" onClick={close} title="Cerrar panel">
+            <X size={18} strokeWidth={2} />
+          </button>
+        </div>
       </div>
 
       <div className="detail-content">
@@ -885,6 +964,33 @@ function Detail({ note, update, close }: any) {
               </>
             )}
           </button>
+
+          <div className="detail-secondary-actions">
+            <button
+              className="btn-detail-action"
+              onClick={() => {
+                if (window.confirm('¿Archivar esta nota? Podrás consultarla en Google Sheets.')) {
+                  archiveNote(f.id)
+                }
+              }}
+              title="Archivar nota"
+            >
+              <Archive size={15} strokeWidth={2} />
+              <span>Archivar</span>
+            </button>
+            <button
+              className="btn-detail-action btn-detail-danger"
+              onClick={() => {
+                if (window.confirm('¿Eliminar definitivamente esta nota? Esta acción no se puede deshacer.')) {
+                  removeNote(f.id)
+                }
+              }}
+              title="Eliminar definitivamente"
+            >
+              <Trash2 size={15} strokeWidth={2} />
+              <span>Eliminar</span>
+            </button>
+          </div>
         </div>
       </div>
     </aside>

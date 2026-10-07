@@ -46,6 +46,9 @@ function useSyncStatus() {
   return status
 }
 
+// Miembros fijos del equipo — hardcodeados para que aparezcan en cualquier dispositivo.
+const BASE_PEOPLE = ['Nelson', 'Melisa Condori', 'Equipo']
+
 export default function App() {
   const [notes, setNotes] = useState<Note[]>(() => {
     try {
@@ -66,9 +69,6 @@ export default function App() {
   const [view, setView] = useState<View>('board')
   const [filter, setFilter] = useState('Pendientes')
   const [activeMember, setActiveMember] = useState<string>('Todos')
-  // Miembros fijos del equipo — hardcodeados para que aparezcan en cualquier dispositivo.
-  // Si se agrega alguien nuevo con "+", se une a esta lista base.
-  const BASE_PEOPLE = ['Nelson', 'Melisa Condori', 'Equipo']
   const [people, setPeople] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('mi-tablero-people-extra')

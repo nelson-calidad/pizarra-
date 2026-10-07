@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   LayoutGrid, SunMedium, ListTodo, CalendarDays, CircleCheckBig, Search, Plus,
   Pin, Clock, RotateCcw, Check, Settings, X, AlertCircle, Trash2, Edit3, Archive,
-  User, Users, Copy, Activity, ChevronDown
+  User, Users, Copy, Activity, ChevronDown, Focus, Navigation
 } from 'lucide-react'
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
 import './App.css'
 
 import type { Note, View, ChecklistItem, ActivityEntry } from './types'
@@ -160,6 +159,8 @@ export default function App() {
   const create = (text: string, date?: string, assignee?: string) => {
     if (!text.trim()) return
     const r = board.current?.getBoundingClientRect()
+    // Distribuir nuevas notas en la zona visible con ligero desplazamiento para que no se superpongan exactamente
+    const offset = (notes.length % 6) * 28
     const n: Note = {
       id: crypto.randomUUID(),
       text: text.trim(),
@@ -170,8 +171,8 @@ export default function App() {
       assignee: assignee || (activeMember !== 'Todos' ? activeMember : undefined),
       color: 'yellow',
       pinned: false,
-      x: Math.max(70, (r?.width || 800) / 2 - 132),
-      y: Math.max(70, (r?.height || 600) / 2 - 78),
+      x: Math.max(80, Math.min(1200, ((r?.width || 800) / 2 - 132) + offset)),
+      y: Math.max(80, Math.min(800, ((r?.height || 600) / 2 - 78) + offset)),
       width: 264,
       height: 155,
       createdAt: new Date().toISOString()
@@ -471,6 +472,12 @@ export default function App() {
 }
 
 function Board({ notes, filter, setFilter, counts, query, setQuery, update, removeNote, select, people, boardRef, activeMember, setActiveMember }: any) {
+  const [scale, setScale] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [isPanning, setIsPanning] = useState(false)
+  const panStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
   const filterList = [
     { key: 'Pendientes', count: counts[1] },
     { key: 'Hoy', count: counts[2] },
@@ -479,6 +486,76 @@ function Board({ notes, filter, setFilter, counts, query, setQuery, update, remo
     { key: 'Todos', count: counts[0] },
     { key: 'Hechos', count: counts[5] }
   ]
+
+  // Rueda del mouse: con Ctrl o Alt hace zoom suave y controlado (0.7 a 1.4). Sin tecla, hace pan/scroll
+  const handleWheel = (e: React.WheelEvent) => {
+    // Si presiona Ctrl o hace pinch en touchpad (e.ctrlKey) -> Zoom
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      e.preventDefault()
+      const delta = e.deltaY < 0 ? 0.05 : -0.05
+      setScale(s => Math.min(1.4, Math.max(0.7, Number((s + delta).toFixed(2)))))
+    } else {
+      // Movimiento natural con la rueda
+      setPan(p => ({
+        x: Math.max(-1200, Math.min(1200, p.x - e.deltaX)),
+        y: Math.max(-1000, Math.min(1000, p.y - e.deltaY))
+      }))
+    }
+  }
+
+  // Paneo arrastrando el fondo del pizarrón
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('.card, button, select, input, textarea, .toolbar')) return
+    panStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y }
+    setIsPanning(true)
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!panStart.current || !isPanning) return
+    const dx = e.clientX - panStart.current.x
+    const dy = e.clientY - panStart.current.y
+    setPan({
+      x: Math.max(-1400, Math.min(1400, panStart.current.panX + dx)),
+      y: Math.max(-1200, Math.min(1200, panStart.current.panY + dy))
+    })
+  }
+
+  const handlePointerUp = () => {
+    panStart.current = null
+    setIsPanning(false)
+  }
+
+  // Centrar y enfocar tareas en pantalla
+  const centerTasks = () => {
+    setScale(1)
+    if (notes.length === 0) {
+      setPan({ x: 0, y: 0 })
+      return
+    }
+    // Calcular centro promedio de las notas activas
+    const avgX = notes.reduce((acc: number, n: Note) => acc + (n.x || 120), 0) / notes.length
+    const avgY = notes.reduce((acc: number, n: Note) => acc + (n.y || 120), 0) / notes.length
+    const rect = containerRef.current?.getBoundingClientRect()
+    const targetW = rect ? rect.width : 900
+    const targetH = rect ? rect.height : 600
+    setPan({
+      x: Math.round(targetW / 2 - avgX - 130),
+      y: Math.round(targetH / 2 - avgY - 80)
+    })
+  }
+
+  // Enfocar una tarea específica
+  const focusNote = (n: Note) => {
+    setScale(1)
+    const rect = containerRef.current?.getBoundingClientRect()
+    const targetW = rect ? rect.width : 900
+    const targetH = rect ? rect.height : 600
+    setPan({
+      x: Math.round(targetW / 2 - n.x - 130),
+      y: Math.round(targetH / 2 - n.y - 80)
+    })
+  }
 
   return (
     <section className="board-page">
@@ -510,80 +587,128 @@ function Board({ notes, filter, setFilter, counts, query, setQuery, update, remo
             </div>
           )}
         </div>
-      </div>
-      <TransformWrapper
-        initialScale={1}
-        minScale={0.3}
-        maxScale={2}
-        wheel={{ step: 0.1 }}
-        panning={{ disabled: false }}
-        doubleClick={{ disabled: true }}
-      >
-        {({ zoomIn, zoomOut, resetTransform, state }) => (
-          <div className="board-wrapper" style={{ position: 'relative', flex: 1, width: '100%', height: '100%', overflow: 'hidden' }}>
-            <div className="canvas-zoom-control" style={{ position: 'absolute', top: '16px', right: '24px', zIndex: 100 }}>
-              <button className="zoom-btn" onClick={() => zoomOut()} title="Alejar">−</button>
-              <button className="zoom-value" onClick={() => resetTransform()}>{Math.round(state.scale * 100)}%</button>
-              <button className="zoom-btn" onClick={() => zoomIn()} title="Acercar">+</button>
+
+        {/* Localizador de tareas rápido en toolbar */}
+        {notes.length > 0 && (
+          <div className="toolbar-quick-notes">
+            <span className="quick-notes-label">Ir a nota:</span>
+            <div className="quick-notes-chips">
+              {notes.slice(0, 4).map((n: Note) => (
+                <button
+                  key={n.id}
+                  className="quick-note-btn"
+                  onClick={() => focusNote(n)}
+                  title={`Centrar "${n.text}"`}
+                >
+                  <Navigation size={11} strokeWidth={2.4} />
+                  <span>{n.text.slice(0, 18)}{n.text.length > 18 ? '…' : ''}</span>
+                </button>
+              ))}
             </div>
-            <TransformComponent
-              wrapperStyle={{ width: '100%', height: '100%' }}
-              contentStyle={{ width: '3000px', height: '2000px' }}
-              wrapperClass="board"
-              contentClass="board-canvas"
-            >
-              <div ref={boardRef} style={{ width: '3000px', height: '2000px', position: 'relative' }}>
-                {notes.length ? (
-                  notes.map((n: Note) => (
-                    <Card
-                      note={n}
-                      update={update}
-                      removeNote={removeNote}
-                      select={select}
-                      people={people}
-                      key={n.id}
-                    />
-                  ))
-                ) : (
-                  <div className="empty" style={{ pointerEvents: 'auto' }}>
-                    <div className="empty-icon-wrap">
-                      <LayoutGrid size={32} strokeWidth={1.6} />
-                    </div>
-                    <h2>
-                      {activeMember !== 'Todos'
-                        ? `No hay notas asignadas a ${activeMember}`
-                        : query || filter !== 'Todos'
-                        ? 'No hay notas con este filtro'
-                        : 'Tu pizarrón está vacío'}
-                    </h2>
-                    <p>
-                      {activeMember !== 'Todos'
-                        ? 'Las notas sin responsable aparecen en el espacio General.'
-                        : query || filter !== 'Todos'
-                        ? 'Probá cambiando la categoría o el filtro seleccionado.'
-                        : 'Escribí algo que quieras recordar o creá una nueva nota.'}
-                    </p>
-                    {activeMember !== 'Todos' && (
-                      <button
-                        className="btn-empty-switch"
-                        onClick={() => setActiveMember('Todos')}
-                      >
-                        <Users size={14} strokeWidth={2} />
-                        <span>Ver todas las notas (General)</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </TransformComponent>
           </div>
         )}
-      </TransformWrapper>
+      </div>
+
+      <div
+        className={`board-wrapper ${isPanning ? 'is-panning' : ''}`}
+        ref={containerRef}
+        onWheel={handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+      >
+        {/* Controles de Zoom y Centrado */}
+        <div className="canvas-zoom-control">
+          <button
+            className="zoom-btn"
+            onClick={() => setScale(s => Math.max(0.7, Number((s - 0.1).toFixed(2))))}
+            title="Alejar (Ctrl + Rueda abajo)"
+          >
+            −
+          </button>
+          <button
+            className="zoom-value"
+            onClick={() => { setScale(1); setPan({ x: 0, y: 0 }) }}
+            title="Restablecer tamaño normal (100%)"
+          >
+            {Math.round(scale * 100)}%
+          </button>
+          <button
+            className="zoom-btn"
+            onClick={() => setScale(s => Math.min(1.4, Number((s + 0.1).toFixed(2))))}
+            title="Acercar (Ctrl + Rueda arriba)"
+          >
+            +
+          </button>
+          <button
+            className="zoom-btn-center"
+            onClick={centerTasks}
+            title="Centrar y ver todas las tareas"
+          >
+            <Focus size={13} strokeWidth={2.2} />
+            <span>Centrar</span>
+          </button>
+        </div>
+
+        {/* Lienzo del pizarrón con transform suave */}
+        <div
+          ref={boardRef}
+          className="board-canvas"
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
+            transformOrigin: '0 0',
+            transition: isPanning ? 'none' : 'transform 120ms ease-out'
+          }}
+        >
+          {notes.length ? (
+            notes.map((n: Note) => (
+              <Card
+                note={n}
+                update={update}
+                removeNote={removeNote}
+                select={select}
+                people={people}
+                scale={scale}
+                key={n.id}
+              />
+            ))
+          ) : (
+            <div className="empty" style={{ pointerEvents: 'auto' }}>
+              <div className="empty-icon-wrap">
+                <LayoutGrid size={32} strokeWidth={1.6} />
+              </div>
+              <h2>
+                {activeMember !== 'Todos'
+                  ? `No hay notas asignadas a ${activeMember}`
+                  : query || filter !== 'Todos'
+                  ? 'No hay notas con este filtro'
+                  : 'Tu pizarrón está vacío'}
+              </h2>
+              <p>
+                {activeMember !== 'Todos'
+                  ? 'Las notas sin responsable aparecen en el espacio General.'
+                  : query || filter !== 'Todos'
+                  ? 'Probá cambiando la categoría o el filtro seleccionado.'
+                  : 'Escribí algo que quieras recordar o creá una nueva nota.'}
+              </p>
+              {activeMember !== 'Todos' && (
+                <button
+                  className="btn-empty-switch"
+                  onClick={() => setActiveMember('Todos')}
+                >
+                  <Users size={14} strokeWidth={2} />
+                  <span>Ver todas las notas (General)</span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </section>
   )
 }
 
-function Card({ note, update, removeNote, select, people }: any) {
+function Card({ note, update, removeNote, select, people, scale = 1 }: any) {
   const start = useRef<any>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [localPos, setLocalPos] = useState({ x: note.x, y: note.y })
@@ -596,19 +721,22 @@ function Card({ note, update, removeNote, select, people }: any) {
     start.current = { x: e.clientX, y: e.clientY, l: note.x, t: note.y }
     setIsDragging(true)
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    e.stopPropagation()
   }
 
   const move = (e: React.PointerEvent) => {
     if (!start.current) return
+    const currentScale = scale || 1
+    // Movimiento preciso compensando la escala activa
     setLocalPos({
-      x: Math.max(0, start.current.l + e.clientX - start.current.x),
-      y: Math.max(0, start.current.t + e.clientY - start.current.y)
+      x: Math.max(0, start.current.l + (e.clientX - start.current.x) / currentScale),
+      y: Math.max(0, start.current.t + (e.clientY - start.current.y) / currentScale)
     })
   }
 
   const up = () => {
     if (start.current && isDragging) {
-      update(note.id, { x: localPos.x, y: localPos.y })
+      update(note.id, { x: Math.round(localPos.x), y: Math.round(localPos.y) })
     }
     start.current = null
     setIsDragging(false)

@@ -1,153 +1,349 @@
-import type { Note, ChecklistItem, Person, ActivityEntry } from '../types'
+// Sincronización con Google Sheets (Apps Script).
+// - La cola de cambios se guarda en localStorage: no se pierde al recargar ni sin conexión.
+// - "Sincronizado" sólo se informa cuando la cola está vacía y Sheets confirmó todo.
+// - La URL y la clave de acceso se configuran en la app (no se compilan secretos en el frontend).
 
-const apiUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL as string | undefined
+import type { Note, ChecklistItem, Person, ActivityEntry, PlannerData, SyncOp, SyncStatus } from '../types'
+import {
+  fromSheet, fromSheetPerson, fromSheetActivity, fromSheetChecklist,
+  activityFromSheet, executionFromSheet, eventFromSheet
+} from './mappers'
 
-// ---- MAPPING ----
+export { toSheet } from './mappers'
 
-export const toSheet = (n: Partial<Note>) =>
-  Object.fromEntries(
-    Object.entries(n).map(([k, v]) => [
-      ({
-        id: 'ID', text: 'TEXTO', description: 'DESCRIPCION',
-        status: 'ESTADO', date: 'FECHA', time: 'HORA',
-        category: 'CATEGORIA', priority: 'PRIORIDAD',
-        assignee: 'RESPONSABLE', color: 'COLOR', pinned: 'FIJADA',
-        x: 'X', y: 'Y', width: 'ANCHO', height: 'ALTO',
-        createdAt: 'CREADO_EN', updatedAt: 'ACTUALIZADO_EN',
-        completedAt: 'COMPLETADO_EN'
-      } as Record<string, string>)[k] || k.toUpperCase(),
-      v
-    ])
-  )
+const LS_URL = 'mi-tablero-api-url'
+const LS_KEY = 'mi-tablero-api-key'
+const LS_QUEUE = 'mi-tablero-sync-queue'
+const LS_FAILED = 'mi-tablero-sync-failed'
 
-const normalizeDate = (d?: unknown): string | undefined => {
-  if (!d || typeof d !== 'string') return undefined
-  const t = d.trim()
-  if (!t) return undefined
-  if (t.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10)
-  return t
+const envUrl = (import.meta.env?.VITE_GOOGLE_SCRIPT_URL as string | undefined) || ''
+
+const ls = {
+  get(k: string) {
+    try { return globalThis.localStorage?.getItem(k) ?? null } catch { return null }
+  },
+  set(k: string, v: string) {
+    try { globalThis.localStorage?.setItem(k, v) } catch { /* almacenamiento lleno o bloqueado */ }
+  },
+  del(k: string) {
+    try { globalThis.localStorage?.removeItem(k) } catch { /* noop */ }
+  }
 }
 
-export const fromSheet = (n: Record<string, unknown>): Note => ({
-  id: n.ID as string,
-  text: (n.TEXTO as string) || '',
-  description: (n.DESCRIPCION as string) || '',
-  status: (n.ESTADO as string || 'PENDIENTE') as Note['status'],
-  date: normalizeDate(n.FECHA),
-  time: (n.HORA as string) || undefined,
-  category: (n.CATEGORIA as string) || 'General',
-  priority: (n.PRIORIDAD as string) || 'NORMAL',
-  assignee: (n.RESPONSABLE as string) || undefined,
-  color: (n.COLOR as string) || 'yellow',
-  pinned: n.FIJADA === true || n.FIJADA === 'TRUE',
-  x: Math.max(0, Number(n.X) || 120),
-  y: Math.max(0, Number(n.Y) || 120),
-  width: Number(n.ANCHO) || 264,
-  height: Number(n.ALTO) || 155,
-  createdAt: (n.CREADO_EN as string) || new Date().toISOString(),
-  updatedAt: (n.ACTUALIZADO_EN as string) || undefined,
-  completedAt: (n.COMPLETADO_EN as string) || undefined,
-})
+export function getApiUrl(): string {
+  return (ls.get(LS_URL) || envUrl || '').trim()
+}
+export function getAccessKey(): string {
+  return (ls.get(LS_KEY) || '').trim()
+}
+export function setConnection(url: string, key: string) {
+  if (url.trim() && url.trim() !== envUrl) ls.set(LS_URL, url.trim())
+  else ls.del(LS_URL)
+  if (key.trim()) ls.set(LS_KEY, key.trim())
+  else ls.del(LS_KEY)
+  authFailed = false
+  notify()
+  void flushQueue()
+}
+export const isRemoteEnabled = () => !!getApiUrl()
 
-export const fromSheetPerson = (n: Record<string, unknown>): Person => ({
-  id: (n.ID as string),
-  name: (n.NOMBRE as string) || '',
-  active: n.ACTIVO === true || n.ACTIVO === 'TRUE' || n.ACTIVO === undefined || n.ACTIVO === '',
-  order: Number(n.ORDEN) || 0,
-  createdAt: (n.CREADO_EN as string) || new Date().toISOString(),
-})
+// ---------------- Cola persistente ----------------
 
-export const fromSheetActivity = (n: Record<string, unknown>): ActivityEntry => ({
-  id: (n.ID as string),
-  noteId: (n.NOTA_ID as string) || '',
-  action: (n.ACCION as string) || '',
-  detail: (n.DETALLE as string) || '',
-  before: (n.ANTES as string) || undefined,
-  after: (n.DESPUES as string) || undefined,
-  actor: (n.ACTOR as string) || undefined,
-  createdAt: (n.CREADO_EN as string) || new Date().toISOString(),
-})
+const loadList = (k: string): SyncOp[] => {
+  try {
+    const raw = ls.get(k)
+    const v = raw ? JSON.parse(raw) : []
+    return Array.isArray(v) ? v : []
+  } catch {
+    return []
+  }
+}
 
-export const fromSheetChecklist = (n: Record<string, unknown>): ChecklistItem => ({
-  id: (n.ID as string),
-  noteId: (n.NOTA_ID as string) || '',
-  text: (n.TEXTO as string) || '',
-  done: n.COMPLETADO === true || n.COMPLETADO === 'TRUE',
-  order: Number(n.ORDEN) || 0,
-})
-
-// ---- SYNC QUEUE ----
-
-type QueuedOp = { action: string; id?: string; data?: unknown; retries: number }
-const queue: QueuedOp[] = []
+let queue: SyncOp[] = loadList(LS_QUEUE)
+let failed: SyncOp[] = loadList(LS_FAILED)
 let flushing = false
-export let syncStatus: 'idle' | 'saving' | 'error' | 'offline' = 'idle'
-export const syncListeners: Set<(s: typeof syncStatus) => void> = new Set()
-const notify = (s: typeof syncStatus) => { syncStatus = s; syncListeners.forEach(l => l(s)) }
+let offline = false
+let authFailed = false
+let lastError = ''
+let retryTimer: ReturnType<typeof setTimeout> | null = null
 
-async function flushQueue() {
-  if (flushing || !queue.length || !apiUrl) return
+const persist = () => {
+  ls.set(LS_QUEUE, JSON.stringify(queue))
+  ls.set(LS_FAILED, JSON.stringify(failed))
+}
+
+export type SyncSnapshot = {
+  status: SyncStatus
+  pending: number
+  failed: number
+  lastError: string
+}
+
+export const syncListeners: Set<(s: SyncSnapshot) => void> = new Set()
+
+export function getSyncSnapshot(): SyncSnapshot {
+  let status: SyncStatus
+  if (!isRemoteEnabled()) status = 'local'
+  else if (authFailed) status = 'auth'
+  else if (flushing) status = 'saving'
+  else if (offline && queue.length) status = 'offline'
+  else if (failed.length) status = 'error'
+  else if (queue.length) status = lastError ? 'error' : 'pending'
+  else status = 'idle'
+  return { status, pending: queue.length, failed: failed.length, lastError }
+}
+
+const notify = () => {
+  const s = getSyncSnapshot()
+  syncListeners.forEach(l => l(s))
+}
+
+const scheduleRetry = (ms: number) => {
+  if (retryTimer) clearTimeout(retryTimer)
+  retryTimer = setTimeout(() => { retryTimer = null; void flushQueue() }, ms)
+}
+
+type ApiResponse = { success: boolean; data?: unknown; error?: string; code?: number }
+
+class NetworkError extends Error {}
+class AuthError extends Error {}
+
+async function post(body: Record<string, unknown>): Promise<ApiResponse> {
+  const url = getApiUrl()
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      // text/plain evita el preflight CORS que Apps Script no soporta.
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ ...body, key: getAccessKey() || undefined })
+    })
+  } catch (e) {
+    throw new NetworkError(e instanceof Error ? e.message : 'Sin conexión')
+  }
+  let json: ApiResponse
+  try {
+    json = await res.json()
+  } catch {
+    throw new NetworkError('Respuesta inválida del servidor')
+  }
+  if (!json.success && (json.code === 401 || json.error === 'NO_AUTORIZADO')) throw new AuthError('Clave de acceso inválida')
+  return json
+}
+
+/** Errores definitivos (no tiene sentido reintentar). */
+const isPermanent = (err: string) => /no encontrad|no reconocida|inválid/i.test(err)
+
+export async function flushQueue(): Promise<void> {
+  if (flushing || !queue.length || !isRemoteEnabled() || authFailed) {
+    notify()
+    return
+  }
   flushing = true
-  notify('saving')
+  notify()
   while (queue.length) {
     const op = queue[0]
     try {
-      const r = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: op.action, id: op.id, data: op.data })
-      }).then(x => x.json())
-      if (!r.success) throw new Error(r.error || 'Error')
-      queue.shift()
-    } catch {
-      op.retries = (op.retries || 0) + 1
-      if (!navigator.onLine || op.retries > 5) {
-        notify('offline')
+      const r = await post({ action: op.action, id: op.id, data: op.data })
+      if (!r.success) {
+        const msg = r.error || 'Error desconocido'
+        op.retries = (op.retries || 0) + 1
+        op.lastError = msg
+        if (isPermanent(msg) || op.retries >= 4) {
+          // Se aparta para no bloquear la cola; queda visible en Configuración.
+          failed.push(queue.shift()!)
+          persist()
+          continue
+        }
+        lastError = msg
+        persist()
+        scheduleRetry(Math.min(3000 * op.retries, 30000))
         break
       }
-      await new Promise(r => setTimeout(r, Math.min(2000 * op.retries, 15000)))
+      queue.shift()
+      offline = false
+      lastError = ''
+      persist()
+    } catch (e) {
+      if (e instanceof AuthError) {
+        authFailed = true
+        lastError = e.message
+        break
+      }
+      offline = true
+      op.retries = (op.retries || 0) + 1
+      lastError = e instanceof Error ? e.message : 'Error de red'
+      persist()
+      scheduleRetry(Math.min(4000 * op.retries, 60000))
+      break
     }
   }
   flushing = false
-  notify(queue.length ? 'error' : 'idle')
+  notify()
 }
 
 export function enqueue(action: string, id?: string, data?: unknown) {
-  if (!apiUrl) return
-  queue.push({ action, id, data, retries: 0 })
+  if (!isRemoteEnabled()) return
+  queue.push({ opId: crypto.randomUUID(), action, id, data, retries: 0, createdAt: new Date().toISOString() })
+  persist()
   void flushQueue()
 }
 
 export function retryNow() {
-  flushing = false
+  offline = false
+  lastError = ''
+  for (const op of queue) op.retries = 0
   void flushQueue()
 }
 
-export function hasPending() { return queue.length > 0 }
+/** Vuelve a intentar los cambios apartados por error. */
+export function retryFailed() {
+  queue.push(...failed.map(f => ({ ...f, retries: 0 })))
+  failed = []
+  persist()
+  retryNow()
+}
 
-// ---- API CALLS ----
+export function discardFailed() {
+  failed = []
+  persist()
+  notify()
+}
+
+export function getFailedOps() {
+  return failed.slice()
+}
+
+export function hasPending() {
+  return queue.length > 0
+}
+
+const opEntityIds = (op: SyncOp): string[] => {
+  const ids: string[] = []
+  if (op.id) ids.push(op.id)
+  const d = op.data as Record<string, unknown> | Record<string, unknown>[] | undefined
+  if (Array.isArray(d)) d.forEach(x => x && typeof x.ID === 'string' && ids.push(x.ID))
+  else if (d && typeof d.ID === 'string') ids.push(d.ID)
+  return ids
+}
+
+/** IDs de registros con cambios locales todavía no confirmados por Sheets. */
+export function pendingIds(): Set<string> {
+  const s = new Set<string>()
+  for (const op of queue) opEntityIds(op).forEach(i => s.add(i))
+  return s
+}
+
+export function pendingDeletes(): Set<string> {
+  const s = new Set<string>()
+  for (const op of queue) if (op.action.startsWith('delete') && op.id) s.add(op.id)
+  return s
+}
+
+/**
+ * Combina datos frescos del servidor con los locales sin perder cambios pendientes:
+ * los registros con operaciones en cola conservan su versión local.
+ */
+export function mergeWithPending<T extends { id: string }>(fresh: T[], local: T[]): T[] {
+  const pend = pendingIds()
+  const dels = pendingDeletes()
+  const localById = new Map(local.map(x => [x.id, x]))
+  const out: T[] = []
+  const seen = new Set<string>()
+  for (const f of fresh) {
+    if (!f.id || seen.has(f.id) || dels.has(f.id)) continue
+    seen.add(f.id)
+    out.push(pend.has(f.id) && localById.has(f.id) ? localById.get(f.id)! : f)
+  }
+  for (const l of local) {
+    if (!seen.has(l.id) && pend.has(l.id) && !dels.has(l.id)) {
+      seen.add(l.id)
+      out.push(l)
+    }
+  }
+  return out
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => retryNow())
+  window.addEventListener('offline', () => { offline = true; notify() })
+  // Reintento periódico mientras haya cambios en cola.
+  setInterval(() => { if (queue.length && !flushing) void flushQueue() }, 30000)
+}
+
+// ---------------- Lecturas ----------------
+
+async function get(action: string, params: Record<string, string> = {}): Promise<unknown> {
+  const url = getApiUrl()
+  if (!url) return null
+  const qs = new URLSearchParams({ action, ...params })
+  const key = getAccessKey()
+  if (key) qs.set('key', key)
+  let r: ApiResponse
+  try {
+    r = await fetch(`${url}?${qs.toString()}`).then(x => x.json())
+  } catch (e) {
+    offline = true
+    notify()
+    throw e
+  }
+  if (!r.success) {
+    if (r.code === 401 || r.error === 'NO_AUTORIZADO') {
+      authFailed = true
+      notify()
+    }
+    throw new Error(r.error || 'Error al leer datos')
+  }
+  if (offline || authFailed) {
+    offline = false
+    authFailed = false
+    notify()
+    if (queue.length) void flushQueue()
+  }
+  return r.data
+}
+
+const rows = (d: unknown) => (Array.isArray(d) ? (d as Record<string, unknown>[]) : [])
 
 export async function fetchNotes(): Promise<Note[]> {
-  if (!apiUrl) return []
-  const r = await fetch(`${apiUrl}?action=getNotes`).then(x => x.json())
-  return r.success && Array.isArray(r.data) ? r.data.map(fromSheet) : []
+  if (!isRemoteEnabled()) return []
+  return rows(await get('getNotes')).map(fromSheet).filter(n => n.id)
 }
 
 export async function fetchPeople(): Promise<Person[]> {
-  if (!apiUrl) return []
-  const r = await fetch(`${apiUrl}?action=getPeople`).then(x => x.json())
-  return r.success && Array.isArray(r.data) ? r.data.map(fromSheetPerson) : []
+  if (!isRemoteEnabled()) return []
+  return rows(await get('getPeople')).map(fromSheetPerson)
 }
 
 export async function fetchActivity(noteId?: string): Promise<ActivityEntry[]> {
-  if (!apiUrl) return []
-  const url = noteId ? `${apiUrl}?action=getActivity&noteId=${noteId}` : `${apiUrl}?action=getActivity`
-  const r = await fetch(url).then(x => x.json())
-  return r.success && Array.isArray(r.data) ? r.data.map(fromSheetActivity) : []
+  if (!isRemoteEnabled()) return []
+  return rows(await get('getActivity', noteId ? { noteId } : {})).map(fromSheetActivity)
 }
 
 export async function fetchChecklist(noteId: string): Promise<ChecklistItem[]> {
-  if (!apiUrl) return []
-  const r = await fetch(`${apiUrl}?action=getChecklist&noteId=${noteId}`).then(x => x.json())
-  return r.success && Array.isArray(r.data) ? r.data.map(fromSheetChecklist) : []
+  if (!isRemoteEnabled()) return []
+  return rows(await get('getChecklist', { noteId })).map(fromSheetChecklist)
+}
+
+export async function fetchPlanner(): Promise<PlannerData | null> {
+  if (!isRemoteEnabled()) return null
+  const d = (await get('getPlanner')) as Record<string, unknown> | null
+  if (!d) return null
+  return {
+    activities: rows(d.activities).map(activityFromSheet).filter(a => a.id),
+    executions: rows(d.executions).map(executionFromSheet).filter(e => e.id),
+    events: rows(d.events).map(eventFromSheet).filter(e => e.id)
+  }
+}
+
+/** Para pruebas: reinicia el estado interno del módulo. */
+export function __resetForTests() {
+  queue = loadList(LS_QUEUE)
+  failed = loadList(LS_FAILED)
+  flushing = false
+  offline = false
+  authFailed = false
+  lastError = ''
+  if (retryTimer) clearTimeout(retryTimer)
+  retryTimer = null
 }

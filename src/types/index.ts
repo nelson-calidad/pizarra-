@@ -1,6 +1,7 @@
 export type Status = 'PENDIENTE' | 'HECHO' | 'ARCHIVADO'
 export type View = 'board' | 'today' | 'reminders' | 'calendar' | 'done' | 'archived' | 'activity'
-export type SyncStatus = 'idle' | 'saving' | 'error' | 'offline'
+export type Section = 'board' | 'activities' | 'calendar'
+export type SyncStatus = 'local' | 'idle' | 'saving' | 'pending' | 'error' | 'offline' | 'auth'
 
 export type Note = {
   id: string
@@ -53,10 +54,115 @@ export type ActivityEntry = {
 }
 
 export type SyncOp = {
-  id: string
+  opId: string
   action: string
-  noteId?: string
+  id?: string
   data?: unknown
   retries: number
   createdAt: string
+  lastError?: string
+}
+
+// ============================================================
+// PLANIFICADOR DE CALIDAD
+// ============================================================
+
+/** Rol de quien ejecuta o es responsable. Ambos trabajan sobre Jujuy y Salta. */
+export type Role = 'RAC' | 'ANALISTA'
+export type Branch = 'JUJUY' | 'SALTA'
+export type BranchScope = Branch | 'AMBAS'
+
+export type Frequency =
+  | 'UNICA'
+  | 'DIARIA'
+  | 'SEMANAL'
+  | 'MENSUAL'
+  | 'TRIMESTRAL'
+  | 'SEMESTRAL'
+  | 'ANUAL'
+  | 'EVENTO'
+
+export type ActivityState = 'ACTIVA' | 'PAUSADA' | 'INACTIVA'
+
+/** Actividad maestra: qué hay que hacer y con qué regla se repite. */
+export type Activity = {
+  id: string
+  name: string
+  description?: string
+  frequency: Frequency
+  /** Cada cuántas unidades (semanas, meses…) se repite. Por defecto 1. */
+  interval: number
+  /** Fecha de la primera ocurrencia; define el día de la semana / del mes. */
+  startDate: string
+  endDate?: string
+  /** La regla actual se aplica desde esta fecha (cambios de frecuencia no tocan el historial). */
+  effectiveFrom?: string
+  /** Sólo para diarias: lunes a viernes. */
+  businessDaysOnly: boolean
+  branch: BranchScope
+  /** Si la sucursal es AMBAS: registrar Jujuy y Salta por separado. */
+  splitBranches: boolean
+  /** Responsable habitual. */
+  responsible: Role
+  category?: string
+  /** Para actividades vinculadas a eventos (PCGC, cierre de indicadores…). */
+  eventType?: string
+  /** Días respecto del evento: negativo = antes, positivo = después. */
+  offsetDays?: number
+  /** Días de anticipación para mostrarla como "próxima a vencer". */
+  leadDays?: number
+  state: ActivityState
+  sourceNoteId?: string
+  createdBy?: string
+  createdAt: string
+  updatedAt?: string
+}
+
+export type ExecStatus = 'PENDIENTE' | 'EN_CURSO' | 'REALIZADA' | 'NO_REALIZADA'
+
+/** Ejecución: una ocurrencia concreta de una actividad (por período y sucursal). */
+export type Execution = {
+  /** Determinístico: `${activityId}__${period}__${branch}` → evita duplicados. */
+  id: string
+  activityId: string
+  period: string
+  branch: BranchScope
+  dueDate: string
+  /** Quién la ejecuta en esta ocasión (puede diferir del responsable habitual). */
+  executor: Role
+  status: ExecStatus
+  note?: string
+  evidence?: string
+  reason?: string
+  completedAt?: string
+  completedBy?: Role
+  eventId?: string
+  /** Copia del nombre al momento de crearse (para historial). */
+  activityName?: string
+  createdAt: string
+  updatedAt?: string
+  /** Sólo en el cliente: ocurrencia calculada que aún no se guardó en Sheets. */
+  virtual?: boolean
+}
+
+export type EventState = 'ACTIVO' | 'CANCELADO'
+
+/** Hechos con fecha real que disparan actividades: auditorías, cierres oficiales… */
+export type PlannerEvent = {
+  id: string
+  type: string
+  title?: string
+  date: string
+  branch: BranchScope
+  state: EventState
+  notes?: string
+  createdBy?: string
+  createdAt: string
+  updatedAt?: string
+}
+
+export type PlannerData = {
+  activities: Activity[]
+  executions: Execution[]
+  events: PlannerEvent[]
 }

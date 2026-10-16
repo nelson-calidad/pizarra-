@@ -365,6 +365,14 @@ export default function App() {
     enqueue('upsertActivity', created.id, activityToSheet(created))
   }
 
+  const handleImportActivities = (toImport: Activity[]) => {
+    if (!toImport.length) return
+    setActivities(list => [...list, ...toImport])
+    toImport.forEach(act => {
+      enqueue('upsertActivity', act.id, activityToSheet(act))
+    })
+  }
+
   const duplicateActivity = (act: Activity) => {
     setActivityModal({
       open: true,
@@ -909,6 +917,7 @@ export default function App() {
               onDeleteActivity={deactivateActivity}
               onOpenEvents={() => setEventsOpen(true)}
               onQuickCreateTemplate={quickCreateFromTemplate}
+              onImportActivities={handleImportActivities}
             />
           )}
         </div>

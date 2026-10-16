@@ -124,6 +124,10 @@ export type Activity = {
   /** Días de anticipación para mostrarla como "próxima a vencer". */
   leadDays?: number
   state: ActivityState
+  /** Identificador de importación para evitar duplicados en reimportaciones (ej. 'D01', 'S06') */
+  importId?: string
+  /** Notas operativas o advertencias internas del catálogo */
+  notes?: string
   sourceNoteId?: string
   createdBy?: string
   createdAt: string

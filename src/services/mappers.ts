@@ -117,6 +117,7 @@ const ACTIVITY_MAP: Record<string, string> = {
   flexible: 'FLEXIBLE', windowStartDay: 'DIA_INICIO_VENTANA', windowEndDay: 'DIA_FIN_VENTANA',
   branch: 'SUCURSAL', splitBranches: 'POR_SUCURSAL', responsible: 'RESPONSABLE', category: 'CATEGORIA',
   eventType: 'TIPO_EVENTO', offsetDays: 'DESPLAZAMIENTO_DIAS', leadDays: 'AVISO_DIAS', state: 'ESTADO',
+  importId: 'IMPORT_ID', notes: 'NOTAS',
   sourceNoteId: 'NOTA_ORIGEN_ID', createdBy: 'CREADO_POR', createdAt: 'CREADO_EN', updatedAt: 'ACTUALIZADO_EN'
 }
 
@@ -143,6 +144,8 @@ export const activityFromSheet = (r: Record<string, unknown>): Activity => ({
   offsetDays: num(r.DESPLAZAMIENTO_DIAS),
   leadDays: num(r.AVISO_DIAS),
   state: (str(r.ESTADO) || 'ACTIVA') as Activity['state'],
+  importId: optStr(r.IMPORT_ID),
+  notes: optStr(r.NOTAS),
   sourceNoteId: optStr(r.NOTA_ORIGEN_ID),
   createdBy: optStr(r.CREADO_POR),
   createdAt: str(r.CREADO_EN) || new Date().toISOString(),

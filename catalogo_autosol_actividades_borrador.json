@@ -1,0 +1,432 @@
+[
+  {
+    "codigo": "D01",
+    "nombre": "Revisar nuevas encuestas IPSOS y actualizar indicadores Ventas/Posventa",
+    "frecuencia": "DIARIA",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "D02",
+    "nombre": "Comunicar resumen de indicadores a cuatro grupos de WhatsApp",
+    "frecuencia": "DIARIA",
+    "sucursal": "AMBAS",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "D03",
+    "nombre": "Revisar encuestas internas de Ventas y Posventa",
+    "frecuencia": "DIARIA",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "D04",
+    "nombre": "Detectar y seguir Hot Alerts de 1 a 3 estrellas",
+    "frecuencia": "DIARIA",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "S01",
+    "nombre": "Categorizar reclamos de Ventas y Posventa",
+    "frecuencia": "SEMANAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "S02",
+    "nombre": "Verificar calidad de respuestas y gestión de reclamos",
+    "frecuencia": "SEMANAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "RAC"
+  },
+  {
+    "codigo": "S03",
+    "nombre": "Controlar reclamos en fuentes externas",
+    "frecuencia": "SEMANAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_FRECUENCIA"
+  },
+  {
+    "codigo": "S04",
+    "nombre": "Coordinar agenda y pendientes entre RAC y Analista",
+    "frecuencia": "SEMANAL",
+    "sucursal": "AMBAS",
+    "responsable": "RAC"
+  },
+  {
+    "codigo": "S05",
+    "nombre": "Confirmar agenda y reuniones de la visita a Salta",
+    "frecuencia": "SEMANAL",
+    "sucursal": "AMBAS",
+    "responsable": "RAC"
+  },
+  {
+    "codigo": "S06",
+    "nombre": "Viajar a Salta y acompañar a Ventas y Posventa",
+    "frecuencia": "SEMANAL",
+    "sucursal": "SALTA",
+    "responsable": "RAC",
+    "dia_semana": "martes"
+  },
+  {
+    "codigo": "S07",
+    "nombre": "Realizar recorrida semanal de Taller Salta",
+    "frecuencia": "SEMANAL",
+    "sucursal": "SALTA",
+    "responsable": "ANALISTA",
+    "dia_semana": "martes"
+  },
+  {
+    "codigo": "S08",
+    "nombre": "Realizar recorrida semanal de Taller Jujuy",
+    "frecuencia": "SEMANAL",
+    "sucursal": "JUJUY",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_DIA"
+  },
+  {
+    "codigo": "S09",
+    "nombre": "Enviar devoluciones de recorridas de Taller",
+    "frecuencia": "SEMANAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "dia_semana": "viernes"
+  },
+  {
+    "codigo": "S10",
+    "nombre": "Revisar compromisos y vencimientos de planes de acción",
+    "frecuencia": "SEMANAL",
+    "sucursal": "AMBAS",
+    "responsable": "RAC"
+  },
+  {
+    "codigo": "S11",
+    "nombre": "Avanzar con la organización documental de Ambiente",
+    "frecuencia": "SEMANAL",
+    "sucursal": "AMBAS",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_FRECUENCIA"
+  },
+  {
+    "codigo": "S12",
+    "nombre": "Avanzar con el inventario de procedimientos de Procesos",
+    "frecuencia": "SEMANAL",
+    "sucursal": "AMBAS",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_FRECUENCIA"
+  },
+  {
+    "codigo": "M01",
+    "nombre": "Solicitar patentamientos del mes anterior a Administración",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_VENTANA",
+    "ventana_inicio": 1,
+    "ventana_fin": 5
+  },
+  {
+    "codigo": "M02",
+    "nombre": "Enviar informe CEM de Ventas y Posventa",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "RAC",
+    "ventana_inicio": 7,
+    "ventana_fin": 10
+  },
+  {
+    "codigo": "M03",
+    "nombre": "Revisar y completar declaración mínima del 85 % en IPSOS",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "ventana_inicio": 18,
+    "ventana_fin": 22
+  },
+  {
+    "codigo": "M04",
+    "nombre": "Informar por correo que ambas sedes alcanzaron 85 %",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS",
+    "responsable": "RAC",
+    "revisar": "VALIDAR_DISPARADOR"
+  },
+  {
+    "codigo": "M05",
+    "nombre": "Reunión de indicadores de Ventas con responsables",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "RAC",
+    "revisar": "VALIDAR_VENTANA"
+  },
+  {
+    "codigo": "M06",
+    "nombre": "Reunión de indicadores de Posventa con responsables",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "RAC",
+    "revisar": "VALIDAR_VENTANA"
+  },
+  {
+    "codigo": "M07",
+    "nombre": "Muestrear contactos postentrega en SAFE 4C / Salesforce",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "M08",
+    "nombre": "Verificar por muestra PPT contra lote de garantía",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "M09",
+    "nombre": "Realizar control periódico PTV de Garantía",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_ALCANCE"
+  },
+  {
+    "codigo": "M10",
+    "nombre": "Realizar revisión formal de planes de acción con jefaturas",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS",
+    "responsable": "RAC",
+    "revisar": "VALIDAR_FRECUENCIA"
+  },
+  {
+    "codigo": "M11",
+    "nombre": "Comprobar muestra de tasa de correos de Ventas",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_FRECUENCIA"
+  },
+  {
+    "codigo": "M12",
+    "nombre": "Ejecutar auditoría preventiva focalizada de Posventa",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "RAC"
+  },
+  {
+    "codigo": "M13",
+    "nombre": "Controlar salón, USI y condiciones de preentrega",
+    "frecuencia": "MENSUAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_FRECUENCIA"
+  },
+  {
+    "codigo": "A01",
+    "nombre": "Coordinar test de Taller con turnero, cliente y gerencia",
+    "frecuencia": "SEMESTRAL",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "RAC",
+    "revisar": "VALIDAR_FECHAS"
+  },
+  {
+    "codigo": "E01",
+    "nombre": "Revisar checklist oficial PCGC con las jefaturas",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "PCGC",
+    "desfase_dias": -15,
+    "sucursal": "AMBAS (separado)",
+    "responsable": "RAC",
+    "revisar": "VALIDAR_DESFASE"
+  },
+  {
+    "codigo": "E02",
+    "nombre": "Solicitar documentación de PCGC tras aviso oficial",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "PCGC",
+    "desfase_dias": -10,
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "E03",
+    "nombre": "Recordar y revisar documentación pendiente de PCGC",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "PCGC",
+    "desfase_dias": -5,
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_DESFASE"
+  },
+  {
+    "codigo": "E04",
+    "nombre": "Verificar legajos y registros antes de PCGC",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "PCGC",
+    "desfase_dias": -2,
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_DESFASE"
+  },
+  {
+    "codigo": "E05",
+    "nombre": "Comunicar resultados PCGC y abrir planes ante hallazgos",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "PCGC",
+    "desfase_dias": 2,
+    "sucursal": "AMBAS (separado)",
+    "responsable": "RAC"
+  },
+  {
+    "codigo": "E06",
+    "nombre": "Planificar auditoría interna ISO 9001 previa a la oficial",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "ISO",
+    "desfase_dias": -10,
+    "sucursal": "AMBAS (separado)",
+    "responsable": "RAC",
+    "revisar": "VALIDAR_DESFASE"
+  },
+  {
+    "codigo": "E07",
+    "nombre": "Comunicar resultados ISO y abrir planes ante hallazgos",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "ISO",
+    "desfase_dias": 3,
+    "sucursal": "AMBAS (separado)",
+    "responsable": "RAC"
+  },
+  {
+    "codigo": "E08",
+    "nombre": "Enviar informe de avance intermedio SSI Ventas",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "CIERRE_INDICADORES",
+    "desfase_dias": -1,
+    "sucursal": "AMBAS",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "E09",
+    "nombre": "Enviar informe de cierre SSI Ventas",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "CIERRE_INDICADORES",
+    "desfase_dias": 1,
+    "sucursal": "AMBAS",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "E10",
+    "nombre": "Enviar informe de avance intermedio CSI Posventa",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "CIERRE_INDICADORES",
+    "desfase_dias": -1,
+    "sucursal": "AMBAS",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "E11",
+    "nombre": "Enviar informe de cierre CSI Posventa",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "CIERRE_INDICADORES",
+    "desfase_dias": 1,
+    "sucursal": "AMBAS",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "E12",
+    "nombre": "Realizar inducción de Calidad por nuevo ingreso",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "INDUCCION_CALIDAD",
+    "desfase_dias": 0,
+    "sucursal": "AMBAS",
+    "responsable": "ANALISTA"
+  },
+  {
+    "codigo": "E13",
+    "nombre": "Participar en reunión comercial y mostrar indicadores",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "REUNION_COMERCIAL",
+    "desfase_dias": 0,
+    "sucursal": "AMBAS (separado)",
+    "responsable": "RAC"
+  },
+  {
+    "codigo": "E14",
+    "nombre": "Enviar minuta luego de cada reunión de indicadores de Ventas",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "MINUTA_REUNION",
+    "desfase_dias": 1,
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_DISPARADOR"
+  },
+  {
+    "codigo": "E15",
+    "nombre": "Enviar minuta luego de cada reunión de indicadores de Posventa",
+    "frecuencia": "EVENTO",
+    "tipo_evento": "MINUTA_REUNION",
+    "desfase_dias": 1,
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_DISPARADOR"
+  },
+  {
+    "codigo": "U01",
+    "nombre": "Revisar órdenes de reparación a demanda",
+    "frecuencia": "UNICA",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "revisar": "BAJO_DEMANDA"
+  },
+  {
+    "codigo": "U02",
+    "nombre": "Reforzar encuestas activas SSI/CSI con asesores",
+    "frecuencia": "UNICA",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "revisar": "BAJO_DEMANDA"
+  },
+  {
+    "codigo": "U03",
+    "nombre": "Solicitar reporte Salesforce postentrega a jefaturas",
+    "frecuencia": "UNICA",
+    "sucursal": "AMBAS (separado)",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_FECHA"
+  },
+  {
+    "codigo": "U04",
+    "nombre": "Reunirse con Abigail para revisar circuito Call Center",
+    "frecuencia": "UNICA",
+    "sucursal": "AMBAS",
+    "responsable": "RAC",
+    "revisar": "VALIDAR_FECHA"
+  },
+  {
+    "codigo": "U05",
+    "nombre": "Actualizar presentación de inducción de Calidad",
+    "frecuencia": "UNICA",
+    "sucursal": "AMBAS",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_FECHA"
+  },
+  {
+    "codigo": "U06",
+    "nombre": "Relevar documentación y crear carpetas de Ambiente",
+    "frecuencia": "UNICA",
+    "sucursal": "AMBAS",
+    "responsable": "ANALISTA",
+    "revisar": "VALIDAR_FECHA"
+  },
+  {
+    "codigo": "U07",
+    "nombre": "Inventariar procedimientos, instructivos y procesos Autosol",
+    "frecuencia": "UNICA",
+    "sucursal": "AMBAS",
+    "responsable": "RAC",
+    "revisar": "VALIDAR_FECHA"
+  }
+]
+

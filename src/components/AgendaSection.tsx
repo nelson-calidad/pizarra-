@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, Plus, CalendarClock, SlidersHorizontal,
   Check, Ban, ChevronDown, ChevronUp, Edit3, Copy, PauseCircle, PlayCircle,
-  Trash2, Sparkles, CheckCircle2
+  Trash2, Sparkles, CheckCircle2, Upload
 } from 'lucide-react'
 import type {
   Activity, AgendaView, BranchScope, Execution, ExecStatus, Note, PlannerEvent, Role
@@ -19,6 +19,7 @@ import {
   visualState, type DailyBacklogGroup
 } from '../lib/planner'
 import { ExecutionRow } from './ExecutionRow'
+import { ImportModal } from './ImportModal'
 import { SUGGESTED_TEMPLATES, type ActivityTemplate } from '../lib/templates'
 
 type Props = {
@@ -47,6 +48,7 @@ type Props = {
   onDeleteActivity: (act: Activity) => void
   onOpenEvents: () => void
   onQuickCreateTemplate: (tpl: ActivityTemplate) => void
+  onImportActivities: (acts: Activity[]) => void
 }
 
 export function AgendaSection({
@@ -74,12 +76,14 @@ export function AgendaSection({
   onTogglePauseActivity,
   onDeleteActivity,
   onOpenEvents,
-  onQuickCreateTemplate
+  onQuickCreateTemplate,
+  onImportActivities
 }: Props) {
   // Vista inicial de Agenda: HOY (Punto 3)
   const [agendaView, setAgendaView] = useState<AgendaView>('today')
   const [showCatalog, setShowCatalog] = useState(false)
   const [showCompletedToday, setShowCompletedToday] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
 
   // Fecha de referencia para Semana y Mes
   const [weekRef, setWeekRef] = useState(today)
@@ -288,12 +292,14 @@ export function AgendaSection({
           onTogglePauseActivity={onTogglePauseActivity}
           onDeleteActivity={onDeleteActivity}
           onQuickCreateTemplate={onQuickCreateTemplate}
+          onOpenImport={() => setImportOpen(true)}
           onClose={() => setShowCatalog(false)}
         />
       ) : activeActivities.length === 0 && persistedExecutions.length === 0 ? (
         <OnboardingEmpty
           onOpenNewActivity={onOpenNewActivity}
           onQuickCreateTemplate={onQuickCreateTemplate}
+          onOpenImport={() => setImportOpen(true)}
         />
       ) : agendaView === 'today' ? (
         /* =========================================================
@@ -783,6 +789,19 @@ export function AgendaSection({
           </div>
         </div>
       )}
+
+      {/* MODAL DE IMPORTACIÓN MASIVA */}
+      {importOpen && (
+        <ImportModal
+          existingActivities={activities}
+          currentUser={currentUser}
+          onImport={acts => {
+            onImportActivities(acts)
+            setImportOpen(false)
+          }}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
     </section>
   )
 }
@@ -954,6 +973,7 @@ function CatalogView({
   onTogglePauseActivity,
   onDeleteActivity,
   onQuickCreateTemplate,
+  onOpenImport,
   onClose
 }: {
   activities: Activity[]
@@ -963,6 +983,7 @@ function CatalogView({
   onTogglePauseActivity: (act: Activity) => void
   onDeleteActivity: (act: Activity) => void
   onQuickCreateTemplate: (tpl: ActivityTemplate) => void
+  onOpenImport: () => void
   onClose: () => void
 }) {
   return (
@@ -972,7 +993,16 @@ function CatalogView({
           <h2>Catálogo de actividades configuradas ({activities.length})</h2>
           <p>Editá, pausá o reactivá reglas sin afectar el historial registrado.</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={onOpenImport}
+            title="Importar actividades masivamente desde archivo JSON"
+          >
+            <Upload size={14} />
+            <span>Importar actividades</span>
+          </button>
           <button type="button" className="btn-secondary" onClick={onClose}>
             Volver a Agenda
           </button>
@@ -991,6 +1021,7 @@ function CatalogView({
         <OnboardingEmpty
           onOpenNewActivity={onOpenNewActivity}
           onQuickCreateTemplate={onQuickCreateTemplate}
+          onOpenImport={onOpenImport}
         />
       ) : (
         <div className="catalog-list">
@@ -1066,26 +1097,39 @@ function CatalogView({
 
 function OnboardingEmpty({
   onOpenNewActivity,
-  onQuickCreateTemplate
+  onQuickCreateTemplate,
+  onOpenImport
 }: {
   onOpenNewActivity: (prefill?: Partial<Activity>) => void
   onQuickCreateTemplate: (tpl: ActivityTemplate) => void
+  onOpenImport: () => void
 }) {
   return (
     <div className="planner-onboarding">
       <div className="onboarding-head">
         <h2>Tu Agenda de Calidad está lista</h2>
         <p>
-          Agregá tus actividades habituales con <b>+ Nueva actividad</b> o incorporá ejemplos con un clic:
+          Agregá tus actividades habituales con <b>+ Nueva actividad</b> o cargá tu catálogo completo:
         </p>
-        <button
-          type="button"
-          className="btn-new-note"
-          onClick={() => onOpenNewActivity()}
-        >
-          <Plus size={16} strokeWidth={2.4} />
-          <span>+ Nueva actividad</span>
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+          <button
+            type="button"
+            className="btn-new-note"
+            onClick={() => onOpenNewActivity()}
+          >
+            <Plus size={16} strokeWidth={2.4} />
+            <span>+ Nueva actividad</span>
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={onOpenImport}
+            title="Importar catálogo desde archivo JSON"
+          >
+            <Upload size={14} />
+            <span>Importar actividades</span>
+          </button>
+        </div>
       </div>
 
       <div className="onboarding-templates">

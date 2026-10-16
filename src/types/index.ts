@@ -85,6 +85,17 @@ export type Frequency =
 
 export type ActivityState = 'ACTIVA' | 'PAUSADA' | 'INACTIVA'
 
+/** Modalidades de cumplimiento operativo */
+export type CompletionMode = 'CUALQUIERA' | 'CONJUNTA' | 'AMBOS_INDIVIDUAL'
+
+/** Confirmación individual para modalidad AMBOS_INDIVIDUAL */
+export type IndividualConfirmation = {
+  status: ExecStatus
+  completedAt?: string
+  completedBy?: Role
+  note?: string
+}
+
 /** Actividad maestra: qué hay que hacer y con qué regla se repite. */
 export type Activity = {
   id: string
@@ -117,6 +128,10 @@ export type Activity = {
   /** Responsable habitual. */
   responsible: Role
   category?: string
+  /** Modalidad de cumplimiento: 'CUALQUIERA' (predeterminada), 'CONJUNTA', 'AMBOS_INDIVIDUAL' */
+  completionMode?: CompletionMode
+  /** Verbo/etiqueta personalizada para el botón: 'Revisado', 'Hecho', 'Enviado', 'Realizado' */
+  completionLabel?: string
   /** Para actividades vinculadas a eventos (PCGC, cierre de indicadores…). */
   eventType?: string
   /** Días respecto del evento: negativo = antes, positivo = después. */
@@ -155,6 +170,17 @@ export type Execution = {
   completedAt?: string
   completedBy?: Role
   eventId?: string
+  /** Modalidad copiada de la actividad */
+  completionMode?: CompletionMode
+  /** Verbo o acción para el botón */
+  completionLabel?: string
+  /** Para CONJUNTA: quiénes participaron realmente (e.g. ['RAC', 'ANALISTA']) */
+  participants?: Role[]
+  /** Para AMBOS_INDIVIDUAL: confirmación independiente de RAC y Analista */
+  confirmations?: {
+    RAC?: IndividualConfirmation
+    ANALISTA?: IndividualConfirmation
+  }
   /** Copia del nombre al momento de crearse (para historial). */
   activityName?: string
   createdAt: string

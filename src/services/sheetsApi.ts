@@ -31,13 +31,12 @@ const ls = {
 }
 
 const DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbwP0uhG6nsbdIKbx-M6kQjQAV5tIyJcxR0tcgpiZqu4QFDtMOALfN3gMFW8PiXt2Tr6/exec'
-const DEFAULT_KEY = '1234'
 
 export function getApiUrl(): string {
   return (ls.get(LS_URL) || envUrl || DEFAULT_URL).trim()
 }
 export function getAccessKey(): string {
-  return (ls.get(LS_KEY) || DEFAULT_KEY).trim()
+  return (ls.get(LS_KEY) || '').trim()
 }
 export function setConnection(url: string, key: string) {
   if (url.trim() && url.trim() !== envUrl) ls.set(LS_URL, url.trim())

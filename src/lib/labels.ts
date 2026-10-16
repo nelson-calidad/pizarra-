@@ -156,3 +156,31 @@ export function periodLabel(period: string, freq?: Frequency): string {
   if (freq === 'DIARIA') return shortDate(period)
   return period
 }
+
+export const COMPLETION_MODE_LABEL: Record<import('../types').CompletionMode, string> = {
+  CUALQUIERA: 'Cualquiera de los dos (RAC o Analista)',
+  CONJUNTA: 'Trabajo conjunto (ambos participan)',
+  AMBOS_INDIVIDUAL: 'Revisión individual de ambos (confirmación doble)'
+}
+
+export const COMPLETION_MODE_SHORT: Record<import('../types').CompletionMode, string> = {
+  CUALQUIERA: 'Cualquiera',
+  CONJUNTA: 'Conjunta',
+  AMBOS_INDIVIDUAL: 'Doble confirmación'
+}
+
+export function getDefaultCompletionLabel(name?: string, custom?: string): string {
+  if (custom && custom.trim()) return custom.trim()
+  const n = (name || '').toLowerCase()
+  if (n.includes('revisar') || n.includes('controlar') || n.includes('verificar') || n.includes('muestrear') || n.includes('detectar') || n.includes('categorizar') || n.includes('inventariar') || n.includes('relevar')) {
+    return 'Revisado'
+  }
+  if (n.includes('enviar') || n.includes('comunicar') || n.includes('solicitar') || n.includes('informar') || n.includes('declarar')) {
+    return 'Enviado'
+  }
+  if (n.includes('recorrida') || n.includes('reunión') || n.includes('reunion') || n.includes('viajar') || n.includes('viaje') || n.includes('auditoría') || n.includes('auditoria') || n.includes('inducción') || n.includes('induccion') || n.includes('test') || n.includes('acompañar') || n.includes('participar') || n.includes('avanzar')) {
+    return 'Realizado'
+  }
+  return 'Hecho'
+}
+

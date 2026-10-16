@@ -15,10 +15,11 @@ import {
   BRANCH_LABEL, BRANCH_SHORT, describeRule, eventTypeLabel, FREQ_LABEL, ROLE_LABEL
 } from '../lib/labels'
 import {
-  buildExecutions, buildTodayView, buildWeekView, leadDaysFor, matchesFilter,
-  visualState, type DailyBacklogGroup
+  buildExecutions, buildTodayView, buildWeekView, groupExecutionsByActivity,
+  leadDaysFor, matchesFilter, visualState, type DailyBacklogGroup
 } from '../lib/planner'
 import { ExecutionRow } from './ExecutionRow'
+import { GroupedExecutionCard } from './GroupedExecutionCard'
 import { ImportModal } from './ImportModal'
 import { SUGGESTED_TEMPLATES, type ActivityTemplate } from '../lib/templates'
 
@@ -107,6 +108,26 @@ export function AgendaSection({
   const todayModel = useMemo(
     () => buildTodayView(activities, persistedExecutions, events, today, filter),
     [activities, persistedExecutions, events, today, filter]
+  )
+
+  const groupedOverdueTasks = useMemo(
+    () => groupExecutionsByActivity(todayModel.overdueTasks, actMap),
+    [todayModel.overdueTasks, actMap]
+  )
+
+  const groupedTodayTasks = useMemo(
+    () => groupExecutionsByActivity(todayModel.todayTasks, actMap),
+    [todayModel.todayTasks, actMap]
+  )
+
+  const groupedFlexibleSoon = useMemo(
+    () => groupExecutionsByActivity(todayModel.flexibleSoon, actMap),
+    [todayModel.flexibleSoon, actMap]
+  )
+
+  const groupedCompletedToday = useMemo(
+    () => groupExecutionsByActivity(todayModel.completedToday, actMap),
+    [todayModel.completedToday, actMap]
   )
 
   const todayEvents = useMemo(
@@ -347,7 +368,7 @@ export function AgendaSection({
           )}
 
           {/* 1. Vencidas y atraso compacto de diarias */}
-          {(todayModel.overdueTasks.length > 0 || todayModel.dailyBacklog.length > 0) && (
+          {(groupedOverdueTasks.length > 0 || todayModel.dailyBacklog.length > 0) && (
             <div className="exec-group group-overdue">
               <div className="exec-group-header">
                 <h2>Vencidas pendientes</h2>
@@ -365,11 +386,10 @@ export function AgendaSection({
                     }
                   />
                 ))}
-                {todayModel.overdueTasks.map(ex => (
-                  <ExecutionRow
-                    key={ex.id}
-                    execution={ex}
-                    activity={actMap.get(ex.activityId)}
+                {groupedOverdueTasks.map(group => (
+                  <GroupedExecutionCard
+                    key={group.activityId}
+                    group={group}
                     today={today}
                     currentUser={currentUser}
                     onChangeStatus={onChangeStatus}
@@ -401,11 +421,10 @@ export function AgendaSection({
               </div>
             ) : (
               <div className="exec-group-list">
-                {todayModel.todayTasks.map(ex => (
-                  <ExecutionRow
-                    key={ex.id}
-                    execution={ex}
-                    activity={actMap.get(ex.activityId)}
+                {groupedTodayTasks.map(group => (
+                  <GroupedExecutionCard
+                    key={group.activityId}
+                    group={group}
                     today={today}
                     currentUser={currentUser}
                     onChangeStatus={onChangeStatus}
@@ -432,11 +451,10 @@ export function AgendaSection({
                 </span>
               </div>
               <div className="exec-group-list">
-                {todayModel.flexibleSoon.map(ex => (
-                  <ExecutionRow
-                    key={ex.id}
-                    execution={ex}
-                    activity={actMap.get(ex.activityId)}
+                {groupedFlexibleSoon.map(group => (
+                  <GroupedExecutionCard
+                    key={group.activityId}
+                    group={group}
                     today={today}
                     currentUser={currentUser}
                     onChangeStatus={onChangeStatus}
@@ -469,11 +487,10 @@ export function AgendaSection({
               </button>
               {showCompletedToday && (
                 <div className="exec-group-list">
-                  {todayModel.completedToday.map(ex => (
-                    <ExecutionRow
-                      key={ex.id}
-                      execution={ex}
-                      activity={actMap.get(ex.activityId)}
+                  {groupedCompletedToday.map(group => (
+                    <GroupedExecutionCard
+                      key={group.activityId}
+                      group={group}
                       today={today}
                       currentUser={currentUser}
                       compact
@@ -524,17 +541,84 @@ export function AgendaSection({
             )}
           </div>
 
-          {/* Apartado discreto: Flexibles de la semana */}
-          {weekModel.flexibleWeek.length > 0 && (
+          {/* Vencidas no resueltas de la semana */}
+          {weekModel.overdueWeek && weekModel.overdueWeek.length > 0 && (
+            <div className="exec-group group-overdue week-flexibles-box">
+              <div className="exec-group-header">
+                <h2>Vencidas pendientes de la semana</h2>
+                <span className="group-count-pill tone-danger">
+                  {weekModel.overdueWeek.length}
+                </span>
+              </div>
+              <div className="exec-group-list">
+                {weekModel.overdueWeek.map(ex => (
+                  <ExecutionRow
+                    key={ex.id}
+                    execution={ex}
+                    activity={actMap.get(ex.activityId)}
+                    today={today}
+                    currentUser={currentUser}
+                    onChangeStatus={onChangeStatus}
+                    onChangeExecutor={onChangeExecutor}
+                    onReschedule={onRescheduleExecution}
+                    onSaveObservation={onSaveObservation}
+                    onSelect={onSelectExecution}
+                    onEditActivity={onEditActivity}
+                    onDuplicateActivity={onDuplicateActivity}
+                    onTogglePauseActivity={onTogglePauseActivity}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Semanales flexibles sin día rígido */}
+          {((weekModel.flexibleWeekly && weekModel.flexibleWeekly.length > 0) ||
+            (!weekModel.flexibleWeekly && weekModel.flexibleWeek.length > 0)) && (
             <div className="exec-group week-flexibles-box">
               <div className="exec-group-header">
                 <h2>Flexibles de la semana</h2>
                 <span className="group-count-pill tone-info">
-                  {weekModel.flexibleWeek.filter(e => e.status !== 'REALIZADA').length} pendientes
+                  {(weekModel.flexibleWeekly || weekModel.flexibleWeek).filter(
+                    e => e.status !== 'REALIZADA'
+                  ).length}{' '}
+                  pendientes
                 </span>
               </div>
               <div className="exec-group-list">
-                {weekModel.flexibleWeek.map(ex => (
+                {(weekModel.flexibleWeekly || weekModel.flexibleWeek).map(ex => (
+                  <ExecutionRow
+                    key={ex.id}
+                    execution={ex}
+                    activity={actMap.get(ex.activityId)}
+                    today={today}
+                    currentUser={currentUser}
+                    compact={ex.status === 'REALIZADA'}
+                    onChangeStatus={onChangeStatus}
+                    onChangeExecutor={onChangeExecutor}
+                    onReschedule={onRescheduleExecution}
+                    onSaveObservation={onSaveObservation}
+                    onSelect={onSelectExecution}
+                    onEditActivity={onEditActivity}
+                    onDuplicateActivity={onDuplicateActivity}
+                    onTogglePauseActivity={onTogglePauseActivity}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Ventanas mensuales abiertas durante la semana */}
+          {weekModel.monthWindows && weekModel.monthWindows.length > 0 && (
+            <div className="exec-group week-flexibles-box">
+              <div className="exec-group-header">
+                <h2>Ventanas mensuales activas</h2>
+                <span className="group-count-pill tone-neutral">
+                  {weekModel.monthWindows.filter(e => e.status !== 'REALIZADA').length} pendientes
+                </span>
+              </div>
+              <div className="exec-group-list">
+                {weekModel.monthWindows.map(ex => (
                   <ExecutionRow
                     key={ex.id}
                     execution={ex}
@@ -567,13 +651,17 @@ export function AgendaSection({
                     ev.branch === 'AMBAS' ||
                     ev.branch === branchFilter)
               )
-              if (!day.isBusinessDay && day.items.length === 0 && dayEvents.length === 0) {
+              if (day.items.length === 0 && dayEvents.length === 0) {
                 return (
-                  <div key={day.date} className="week-day-card is-weekend-empty">
+                  <div
+                    key={day.date}
+                    className={`week-day-card is-empty-compact ${day.isToday ? 'is-today' : ''}`}
+                  >
                     <span className="week-day-label">
                       {capitalize(weekdayName(day.date))} {shortDate(day.date)}
+                      {day.isToday && <em className="today-pill-badge" style={{ marginLeft: 6 }}>HOY</em>}
                     </span>
-                    <small className="weekend-quiet">Fin de semana · sin actividades</small>
+                    <small className="weekend-quiet">Sin actividades programadas</small>
                   </div>
                 )
               }

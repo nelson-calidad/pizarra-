@@ -188,6 +188,7 @@ export function occurrences(a: Activity, from: ISODate, to: ISODate, events: Pla
 }
 
 export function virtualExecution(a: Activity, o: Occurrence, nowIso: string): Execution {
+  const mode = a.completionMode || 'CUALQUIERA'
   return {
     id: executionId(a.id, o.period, o.branch),
     activityId: a.id,
@@ -199,6 +200,13 @@ export function virtualExecution(a: Activity, o: Occurrence, nowIso: string): Ex
     status: 'PENDIENTE',
     eventId: o.eventId,
     activityName: a.name,
+    completionMode: mode,
+    completionLabel: a.completionLabel,
+    participants: mode === 'CONJUNTA' ? ['RAC', 'ANALISTA'] : undefined,
+    confirmations: mode === 'AMBOS_INDIVIDUAL' ? {
+      RAC: { status: 'PENDIENTE' },
+      ANALISTA: { status: 'PENDIENTE' }
+    } : undefined,
     createdAt: nowIso,
     virtual: true
   }

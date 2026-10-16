@@ -1,7 +1,10 @@
 // Lógica de planificación: combina actividades, ejecuciones guardadas y eventos.
 // Sin dependencias de React: se prueba de forma aislada.
 
-import type { Activity, Execution, ExecStatus, PlannerEvent, Role, BranchScope, Frequency } from '../types'
+import type {
+  Activity, Execution, ExecStatus, PlannerEvent, Role, BranchScope, Frequency,
+  IndividualConfirmation
+} from '../types'
 import { addDays, diffDays, startOfWeek, isWeekend, type ISODate } from './dates'
 import { computeWindowStart, occurrences, virtualExecution } from './recurrence'
 
@@ -74,7 +77,14 @@ export function buildExecutions(
     const winStart = e.windowStart || computeWindowStart(act, e.dueDate)
     const overlapsWindow = winStart !== undefined && winStart <= to && e.dueDate >= from
     if ((e.dueDate >= from && e.dueDate <= to) || overlapsWindow) {
-      byId.set(e.id, winStart ? { ...e, windowStart: winStart } : e)
+      const mode = e.completionMode || act.completionMode || 'CUALQUIERA'
+      const label = e.completionLabel || act.completionLabel
+      byId.set(e.id, {
+        ...e,
+        windowStart: winStart || e.windowStart,
+        completionMode: mode,
+        completionLabel: label
+      })
     }
   }
   const allPersistedIds = new Set(persisted.map(e => e.id))
@@ -404,8 +414,14 @@ export type WeekViewModel = {
   weekStart: ISODate
   weekEnd: ISODate
   days: WeekDayColumn[]
-  /** Apartado discreto "Flexibles de la semana" (semanales flexibles y mensuales en ventana durante esta semana). */
+  /** Apartado discreto "Flexibles de la semana" (retrocompatibilidad) */
   flexibleWeek: Execution[]
+  /** Semanales flexibles */
+  flexibleWeekly: Execution[]
+  /** Mensuales con ventana abierta durante la semana */
+  monthWindows: Execution[]
+  /** Tareas vencidas no resueltas de la semana */
+  overdueWeek: Execution[]
 }
 
 export function buildWeekView(
@@ -425,6 +441,9 @@ export function buildWeekView(
   )
 
   const flexibleWeek: Execution[] = []
+  const flexibleWeekly: Execution[] = []
+  const monthWindows: Execution[] = []
+  const overdueWeek: Execution[] = []
   const byDay = new Map<ISODate, Execution[]>()
   for (let i = 0; i < 7; i++) {
     byDay.set(addDays(weekStart, i), [])
@@ -437,7 +456,15 @@ export function buildWeekView(
       act?.windowStartDay && act?.windowEndDay && act.windowEndDay > act.windowStartDay
     )
 
-    if (isFlexibleWeekly || hasMonthWindow) {
+    if (e.dueDate < today && e.status !== 'REALIZADA' && e.status !== 'NO_REALIZADA') {
+      overdueWeek.push(e)
+    }
+
+    if (isFlexibleWeekly) {
+      flexibleWeekly.push(e)
+      flexibleWeek.push(e)
+    } else if (hasMonthWindow) {
+      monthWindows.push(e)
       flexibleWeek.push(e)
     } else if (byDay.has(e.dueDate)) {
       byDay.get(e.dueDate)!.push(e)
@@ -459,6 +486,180 @@ export function buildWeekView(
     weekStart,
     weekEnd,
     days,
-    flexibleWeek
+    flexibleWeek,
+    flexibleWeekly,
+    monthWindows,
+    overdueWeek
   }
+}
+
+// ============================================================
+// AGRUPACIÓN VISUAL Y MODALIDADES DE CUMPLIMIENTO
+// ============================================================
+
+export type GroupedExecutionCard = {
+  key: string
+  activityId: string
+  activityName: string
+  activity?: Activity
+  period: string
+  dueDate: string
+  items: Execution[]
+}
+
+/**
+ * Agrupa ejecuciones de la misma actividad y período para mostrarlas compactas por sucursal.
+ */
+export function groupExecutionsByActivity(
+  executions: Execution[],
+  activities: Activity[] | Map<string, Activity>
+): GroupedExecutionCard[] {
+  const actMap = activities instanceof Map ? activities : new Map(activities.map(a => [a.id, a]))
+  const groups = new Map<string, GroupedExecutionCard>()
+
+  for (const ex of executions) {
+    const key = `${ex.activityId}__${ex.dueDate || ex.period}`
+    const existing = groups.get(key)
+    if (existing) {
+      existing.items.push(ex)
+    } else {
+      const act = actMap.get(ex.activityId)
+      groups.set(key, {
+        key,
+        activityId: ex.activityId,
+        activityName: act?.name || ex.activityName || 'Actividad',
+        activity: act,
+        period: ex.period,
+        dueDate: ex.dueDate,
+        items: [ex]
+      })
+    }
+  }
+
+  return Array.from(groups.values())
+}
+
+/**
+ * Modalidad A: Cualquiera de los dos (predeterminada).
+ * Un solo clic marca la ejecución como REALIZADA para ambos usuarios.
+ */
+export function toggleAnyCompletion(
+  ex: Execution,
+  actor: Role,
+  nowIso = new Date().toISOString()
+): Partial<Execution> {
+  if (ex.status === 'REALIZADA') {
+    return {
+      status: 'PENDIENTE',
+      completedAt: undefined,
+      completedBy: undefined
+    }
+  }
+  return {
+    status: 'REALIZADA',
+    completedAt: nowIso,
+    completedBy: actor,
+    executor: actor
+  }
+}
+
+/**
+ * Modalidad B: Trabajo conjunto.
+ * Registra quiénes participaron realmente (RAC + Analista o actor).
+ */
+export function toggleJointCompletion(
+  ex: Execution,
+  actor: Role,
+  participants: Role[] = ['RAC', 'ANALISTA'],
+  nowIso = new Date().toISOString()
+): Partial<Execution> {
+  if (ex.status === 'REALIZADA') {
+    return {
+      status: 'PENDIENTE',
+      completedAt: undefined,
+      completedBy: undefined,
+      participants: undefined
+    }
+  }
+  return {
+    status: 'REALIZADA',
+    completedAt: nowIso,
+    completedBy: actor,
+    executor: actor,
+    participants
+  }
+}
+
+/**
+ * Modalidad C: Revisión individual de ambos (confirmación doble).
+ * Cada operador tiene su propia confirmación; la actividad queda REALIZADA cuando ambos cumplieron.
+ */
+export function toggleIndividualConfirmation(
+  ex: Execution,
+  role: Role,
+  nowIso = new Date().toISOString()
+): Partial<Execution> {
+  const currentConfs = ex.confirmations || {
+    RAC: { status: 'PENDIENTE' },
+    ANALISTA: { status: 'PENDIENTE' }
+  }
+  const roleConf = currentConfs[role] || { status: 'PENDIENTE' }
+  const isDone = roleConf.status === 'REALIZADA'
+
+  const nextRoleConf: IndividualConfirmation = isDone
+    ? { status: 'PENDIENTE' }
+    : { status: 'REALIZADA', completedAt: nowIso, completedBy: role }
+
+  const nextConfs = {
+    ...currentConfs,
+    [role]: nextRoleConf
+  }
+
+  const racDone = nextConfs.RAC?.status === 'REALIZADA'
+  const analistaDone = nextConfs.ANALISTA?.status === 'REALIZADA'
+
+  let overallStatus: ExecStatus = 'PENDIENTE'
+  let completedAt: string | undefined = undefined
+  let completedBy: Role | undefined = undefined
+
+  if (racDone && analistaDone) {
+    overallStatus = 'REALIZADA'
+    completedAt = nowIso
+    completedBy = role
+  } else if (racDone || analistaDone) {
+    overallStatus = 'EN_CURSO'
+  }
+
+  return {
+    confirmations: nextConfs,
+    status: overallStatus,
+    completedAt,
+    completedBy
+  }
+}
+
+/**
+ * Deduplica actividades maestras por ID, por importId y por nombre normalizado.
+ */
+export function deduplicateActivities(list: Activity[]): Activity[] {
+  const seenIds = new Set<string>()
+  const seenCodes = new Set<string>()
+  const seenNames = new Set<string>()
+  const result: Activity[] = []
+
+  for (const act of list) {
+    if (!act || !act.id) continue
+    const normName = act.name.trim().toLowerCase()
+    const code = (act.importId || '').trim().toUpperCase()
+
+    if (seenIds.has(act.id)) continue
+    if (code && seenCodes.has(code)) continue
+    if (normName && seenNames.has(normName)) continue
+
+    seenIds.add(act.id)
+    if (code) seenCodes.add(code)
+    if (normName) seenNames.add(normName)
+    result.push(act)
+  }
+  return result
 }

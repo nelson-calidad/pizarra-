@@ -5,7 +5,9 @@ import { occurrences, ruleDates, executionId, periodKey } from '../recurrence'
 import {
   buildExecutions, buildTodayView, buildWeekView, pendingMaterialization,
   reconcileAfterRuleChange, summarize, visualState,
-  matchesFilter, completionPatch, ruleChanged
+  matchesFilter, completionPatch, ruleChanged,
+  deduplicateActivities, groupExecutionsByActivity,
+  toggleJointCompletion, toggleIndividualConfirmation
 } from '../planner'
 import { describeRule } from '../labels'
 
@@ -357,6 +359,102 @@ describe('Etapa 2 — Reglas de Agenda (Hoy, Semana, Ventanas Mensuales y Flexib
     expect(view.overdueTasks).toHaveLength(0) // no satura la lista individual
     expect(view.dailyBacklog).toHaveLength(1)
     expect(view.dailyBacklog[0].items).toHaveLength(4)
+  })
+})
+
+describe('Etapa 4: Modalidades de cumplimiento y deduplicación', () => {
+  it('deduplicateActivities elimina duplicados conservando la actividad más completa', () => {
+    const act1 = base({ id: 'uuid-1', importId: 'D01', name: 'Gestión Reclamos', frequency: 'DIARIA' })
+    const act2 = base({ id: 'uuid-2', importId: 'D01', name: 'Gestión Reclamos', frequency: 'DIARIA', completionMode: 'CUALQUIERA' })
+    const act3 = base({ id: 'uuid-3', name: 'Control de cajas', frequency: 'SEMANAL' })
+    const act4 = base({ id: 'uuid-4', name: 'Control de cajas', frequency: 'SEMANAL' })
+
+    const deduped = deduplicateActivities([act1, act2, act3, act4])
+    expect(deduped).toHaveLength(2)
+  })
+
+  it('groupExecutionsByActivity agrupa ejecuciones de Jujuy y Salta de una misma actividad', () => {
+    const act = base({ id: 'act-1', name: 'Revisión IPSOS', branch: 'AMBAS', splitBranches: true })
+    const exJujuy: Execution = {
+      id: 'ex-jujuy',
+      activityId: 'act-1',
+      activityName: 'Revisión IPSOS',
+      dueDate: '2026-10-16',
+      period: '2026-10-16',
+      branch: 'JUJUY',
+      executor: 'RAC',
+      status: 'PENDIENTE',
+      createdAt: '2026-10-16'
+    }
+    const exSalta: Execution = {
+      id: 'ex-salta',
+      activityId: 'act-1',
+      activityName: 'Revisión IPSOS',
+      dueDate: '2026-10-16',
+      period: '2026-10-16',
+      branch: 'SALTA',
+      executor: 'RAC',
+      status: 'PENDIENTE',
+      createdAt: '2026-10-16'
+    }
+
+    const map = new Map([['act-1', act]])
+    const grouped = groupExecutionsByActivity([exJujuy, exSalta], map)
+    expect(grouped).toHaveLength(1)
+    expect(grouped[0].activityName).toBe('Revisión IPSOS')
+    expect(grouped[0].items).toHaveLength(2)
+  })
+
+  it('toggleJointCompletion registra participantes conjuntos de RAC y Analista', () => {
+    const ex: Execution = {
+      id: 'ex-joint',
+      activityId: 'act-1',
+      dueDate: '2026-10-16',
+      period: '2026-10-16',
+      branch: 'JUJUY',
+      executor: 'RAC',
+      status: 'PENDIENTE',
+      completionMode: 'CONJUNTA',
+      createdAt: '2026-10-16'
+    }
+
+    const patch = toggleJointCompletion(ex, 'RAC', ['RAC', 'ANALISTA'])
+    expect(patch.status).toBe('REALIZADA')
+    expect(patch.participants).toEqual(['RAC', 'ANALISTA'])
+    expect(patch.executor).toBe('RAC')
+  })
+
+  it('toggleIndividualConfirmation maneja doble confirmación 1/2 -> realizada', () => {
+    const ex: Execution = {
+      id: 'ex-double',
+      activityId: 'act-1',
+      dueDate: '2026-10-16',
+      period: '2026-10-16',
+      branch: 'JUJUY',
+      executor: 'RAC',
+      status: 'PENDIENTE',
+      completionMode: 'AMBOS_INDIVIDUAL',
+      createdAt: '2026-10-16'
+    }
+
+    // Primera confirmación por RAC
+    const firstStep = toggleIndividualConfirmation(ex, 'RAC')
+    expect(firstStep.status).toBe('EN_CURSO')
+    expect(firstStep.confirmations?.RAC?.status).toBe('REALIZADA')
+    expect(firstStep.confirmations?.ANALISTA?.status).toBe('PENDIENTE')
+
+    // Segunda confirmación por ANALISTA
+    const updatedEx: Execution = { ...ex, ...firstStep }
+    const secondStep = toggleIndividualConfirmation(updatedEx, 'ANALISTA')
+    expect(secondStep.status).toBe('REALIZADA')
+    expect(secondStep.confirmations?.ANALISTA?.status).toBe('REALIZADA')
+
+    // Si RAC vuelve a confirmar sobre el estado final, desmarca su confirmación volviendo a EN_CURSO
+    const doneEx: Execution = { ...updatedEx, ...secondStep }
+    const uncheckStep = toggleIndividualConfirmation(doneEx, 'RAC')
+    expect(uncheckStep.status).toBe('EN_CURSO')
+    expect(uncheckStep.confirmations?.RAC?.status).toBe('PENDIENTE')
+    expect(uncheckStep.confirmations?.ANALISTA?.status).toBe('REALIZADA')
   })
 })
 

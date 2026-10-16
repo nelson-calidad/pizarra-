@@ -68,6 +68,10 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
   const [leadDays, setLeadDays] = useState<string>(
     initial?.leadDays !== undefined ? String(initial.leadDays) : ''
   )
+  const [completionMode, setCompletionMode] = useState<import('../types').CompletionMode>(
+    initial?.completionMode || 'CUALQUIERA'
+  )
+  const [completionLabel, setCompletionLabel] = useState<string>(initial?.completionLabel || '')
   const [showTemplates, setShowTemplates] = useState(false)
 
   const selectedDow = weekday(startDate || today)
@@ -125,6 +129,8 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
         branch,
         splitBranches: branch === 'AMBAS' ? splitBranches : false,
         responsible,
+        completionMode,
+        completionLabel: completionLabel.trim() || undefined,
         category: category || undefined,
         eventType: frequency === 'EVENTO' ? eventType : undefined,
         offsetDays: frequency === 'EVENTO' ? Number(offsetDays) || 0 : undefined,
@@ -436,6 +442,49 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
               ))}
             </div>
           </div>
+        </div>
+
+        {/* Modalidad de cumplimiento */}
+        <div className="form-grid-2">
+          <div className="form-block">
+            <span className="form-label">Modalidad de cumplimiento</span>
+            <div className="segmented-control">
+              <button
+                type="button"
+                className={completionMode === 'CUALQUIERA' ? 'active' : ''}
+                onClick={() => setCompletionMode('CUALQUIERA')}
+                title="Cualquiera de los dos (1 clic)"
+              >
+                Cualquiera
+              </button>
+              <button
+                type="button"
+                className={completionMode === 'CONJUNTA' ? 'active' : ''}
+                onClick={() => setCompletionMode('CONJUNTA')}
+                title="Trabajo conjunto (RAC + Analista)"
+              >
+                Conjunta
+              </button>
+              <button
+                type="button"
+                className={completionMode === 'AMBOS_INDIVIDUAL' ? 'active' : ''}
+                onClick={() => setCompletionMode('AMBOS_INDIVIDUAL')}
+                title="Doble confirmación individual (1/2 y 2/2)"
+              >
+                Ambos
+              </button>
+            </div>
+          </div>
+
+          <label className="form-block">
+            <span className="form-label">Verbo de acción (opcional)</span>
+            <input
+              className="form-input"
+              value={completionLabel}
+              onChange={e => setCompletionLabel(e.target.value)}
+              placeholder="Auto (Ej: Revisado, Enviado, Hecho)"
+            />
+          </label>
         </div>
 
         {/* Opciones avanzadas opcionales */}

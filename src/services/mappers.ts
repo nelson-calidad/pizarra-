@@ -1,5 +1,5 @@
 // Conversión entre objetos de la app y filas de Google Sheets.
-import type { Activity, Execution, Note, PlannerEvent, ChecklistItem, Person, ActivityEntry } from '../types'
+import type { Activity, Execution, Note, PlannerEvent, ChecklistItem, Person, ActivityEntry, Role } from '../types'
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
 const optStr = (v: unknown) => {
@@ -111,11 +111,17 @@ export const fromSheetChecklist = (n: Record<string, unknown>): ChecklistItem =>
 
 // ---------------- ACTIVIDADES ----------------
 
+function safeJsonParse<T>(raw: unknown): T | undefined {
+  if (!raw || typeof raw !== 'string') return undefined
+  try { return JSON.parse(raw) as T } catch { return undefined }
+}
+
 const ACTIVITY_MAP: Record<string, string> = {
   id: 'ID', name: 'NOMBRE', description: 'DESCRIPCION', frequency: 'FRECUENCIA', interval: 'INTERVALO',
   startDate: 'FECHA_INICIO', endDate: 'FECHA_FIN', effectiveFrom: 'VIGENTE_DESDE', businessDaysOnly: 'SOLO_HABILES',
   flexible: 'FLEXIBLE', windowStartDay: 'DIA_INICIO_VENTANA', windowEndDay: 'DIA_FIN_VENTANA',
   branch: 'SUCURSAL', splitBranches: 'POR_SUCURSAL', responsible: 'RESPONSABLE', category: 'CATEGORIA',
+  completionMode: 'MODO_CUMPLIMIENTO', completionLabel: 'ACCION_CUMPLIMIENTO',
   eventType: 'TIPO_EVENTO', offsetDays: 'DESPLAZAMIENTO_DIAS', leadDays: 'AVISO_DIAS', state: 'ESTADO',
   importId: 'IMPORT_ID', notes: 'NOTAS',
   sourceNoteId: 'NOTA_ORIGEN_ID', createdBy: 'CREADO_POR', createdAt: 'CREADO_EN', updatedAt: 'ACTUALIZADO_EN'
@@ -140,6 +146,8 @@ export const activityFromSheet = (r: Record<string, unknown>): Activity => ({
   splitBranches: bool(r.POR_SUCURSAL, true),
   responsible: (str(r.RESPONSABLE) || 'ANALISTA') as Activity['responsible'],
   category: optStr(r.CATEGORIA),
+  completionMode: (optStr(r.MODO_CUMPLIMIENTO) as Activity['completionMode']) || 'CUALQUIERA',
+  completionLabel: optStr(r.ACCION_CUMPLIMIENTO),
   eventType: optStr(r.TIPO_EVENTO),
   offsetDays: num(r.DESPLAZAMIENTO_DIAS),
   leadDays: num(r.AVISO_DIAS),
@@ -158,10 +166,22 @@ const EXEC_MAP: Record<string, string> = {
   id: 'ID', activityId: 'ACTIVIDAD_ID', period: 'PERIODO', branch: 'SUCURSAL', dueDate: 'FECHA',
   windowStart: 'INICIO_VENTANA', executor: 'EJECUTOR', status: 'ESTADO', note: 'OBSERVACION',
   evidence: 'EVIDENCIA', reason: 'MOTIVO', completedAt: 'COMPLETADO_EN', completedBy: 'COMPLETADO_POR',
-  eventId: 'EVENTO_ID', activityName: 'NOMBRE_ACTIVIDAD', createdAt: 'CREADO_EN', updatedAt: 'ACTUALIZADO_EN'
+  eventId: 'EVENTO_ID', activityName: 'NOMBRE_ACTIVIDAD',
+  completionMode: 'MODO_CUMPLIMIENTO', completionLabel: 'ACCION_CUMPLIMIENTO',
+  participants: 'PARTICIPANTES', confirmations: 'CONFIRMACIONES',
+  createdAt: 'CREADO_EN', updatedAt: 'ACTUALIZADO_EN'
 }
 
-export const executionToSheet = (e: Partial<Execution>) => mapKeys(EXEC_MAP, e as Record<string, unknown>)
+export const executionToSheet = (e: Partial<Execution>) => {
+  const copy: Record<string, unknown> = { ...e }
+  if (Array.isArray(copy.participants)) {
+    copy.participants = copy.participants.join(',')
+  }
+  if (copy.confirmations && typeof copy.confirmations === 'object') {
+    copy.confirmations = JSON.stringify(copy.confirmations)
+  }
+  return mapKeys(EXEC_MAP, copy)
+}
 
 export const executionFromSheet = (r: Record<string, unknown>): Execution => ({
   id: str(r.ID),
@@ -179,6 +199,10 @@ export const executionFromSheet = (r: Record<string, unknown>): Execution => ({
   completedBy: optStr(r.COMPLETADO_POR) as Execution['completedBy'],
   eventId: optStr(r.EVENTO_ID),
   activityName: optStr(r.NOMBRE_ACTIVIDAD),
+  completionMode: (optStr(r.MODO_CUMPLIMIENTO) as Execution['completionMode']) || 'CUALQUIERA',
+  completionLabel: optStr(r.ACCION_CUMPLIMIENTO),
+  participants: r.PARTICIPANTES ? String(r.PARTICIPANTES).split(',').map(s => s.trim()).filter(Boolean) as Role[] : undefined,
+  confirmations: safeJsonParse(r.CONFIRMACIONES),
   createdAt: str(r.CREADO_EN) || new Date().toISOString(),
   updatedAt: optStr(r.ACTUALIZADO_EN)
 })

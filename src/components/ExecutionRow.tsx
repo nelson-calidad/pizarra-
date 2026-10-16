@@ -1,14 +1,19 @@
 import { useState } from 'react'
 import {
   Check, Clock, AlertTriangle, Play, Ban, RotateCcw, MessageSquarePlus,
-  ExternalLink, MoreHorizontal, Edit3, Copy, PauseCircle, Calendar
+  ExternalLink, MoreHorizontal, Edit3, Copy, PauseCircle, Calendar, Users,
+  CheckCircle2
 } from 'lucide-react'
 import type { Activity, Execution, ExecStatus, Role } from '../types'
 import { relativeLabel, shortDate } from '../lib/dates'
 import {
-  BRANCH_LABEL, BRANCH_SHORT, ROLE_LABEL, VISUAL_LABEL
+  BRANCH_LABEL, BRANCH_SHORT, ROLE_LABEL, VISUAL_LABEL,
+  getDefaultCompletionLabel
 } from '../lib/labels'
-import { leadDaysFor, visualState, type Visual } from '../lib/planner'
+import {
+  leadDaysFor, visualState, toggleAnyCompletion, toggleJointCompletion,
+  toggleIndividualConfirmation, type Visual
+} from '../lib/planner'
 
 type Props = {
   execution: Execution
@@ -16,6 +21,7 @@ type Props = {
   today: string
   currentUser: Role
   compact?: boolean
+  hideTitle?: boolean
   onChangeStatus: (ex: Execution, status: ExecStatus, extra?: Partial<Execution>) => void
   onChangeExecutor: (ex: Execution, executor: Role) => void
   onReschedule?: (ex: Execution, newDate: string) => void
@@ -24,6 +30,19 @@ type Props = {
   onEditActivity?: (act: Activity) => void
   onDuplicateActivity?: (act: Activity) => void
   onTogglePauseActivity?: (act: Activity) => void
+}
+
+function formatTime(iso?: string): string {
+  if (!iso) return ''
+  try {
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mm = String(d.getMinutes()).padStart(2, '0')
+    return `${hh}:${mm}`
+  } catch {
+    return ''
+  }
 }
 
 export function visualIcon(v: Visual) {
@@ -49,6 +68,7 @@ export function ExecutionRow({
   today,
   currentUser,
   compact = false,
+  hideTitle = false,
   onChangeStatus,
   onChangeExecutor,
   onReschedule,
@@ -66,17 +86,34 @@ export function ExecutionRow({
   const [noteText, setNoteText] = useState(execution.note || '')
   const [evidenceUrl, setEvidenceUrl] = useState(execution.evidence || '')
   const [reasonText, setReasonText] = useState(execution.reason || '')
-
-  const habitual = activity?.responsible || execution.executor
-  const isReassigned = execution.executor !== habitual
   const isDone = execution.status === 'REALIZADA'
 
+  // Modalidad y verbo de acción
+  const mode = execution.completionMode || activity?.completionMode || 'CUALQUIERA'
+  const actionVerb = getDefaultCompletionLabel(
+    activity?.name || execution.activityName,
+    execution.completionLabel || activity?.completionLabel
+  )
+
   const handleQuickComplete = () => {
-    if (isDone) {
-      onChangeStatus(execution, 'PENDIENTE')
-    } else {
-      onChangeStatus(execution, 'REALIZADA')
+    if (mode === 'AMBOS_INDIVIDUAL') {
+      const patch = toggleIndividualConfirmation(execution, currentUser)
+      onChangeStatus(execution, patch.status || execution.status, patch)
+      return
     }
+    if (mode === 'CONJUNTA') {
+      const patch = toggleJointCompletion(execution, currentUser, ['RAC', 'ANALISTA'])
+      onChangeStatus(execution, patch.status || execution.status, patch)
+      return
+    }
+    // CUALQUIERA
+    const patch = toggleAnyCompletion(execution, currentUser)
+    onChangeStatus(execution, patch.status || execution.status, patch)
+  }
+
+  const handleConfirmRole = (role: Role) => {
+    const patch = toggleIndividualConfirmation(execution, role)
+    onChangeStatus(execution, patch.status || execution.status, patch)
   }
 
   // Etiqueta breve de fecha o ventana sin texto decorativo
@@ -92,29 +129,35 @@ export function ExecutionRow({
     return relativeLabel(execution.dueDate, today)
   }
 
-  return (
-    <div className={`exec-row exec-visual-${v} ${compact || isDone ? 'exec-row-compact' : ''}`}>
-      <div className="exec-row-main">
-        {/* 1 clic para completar / reabrir */}
-        <button
-          type="button"
-          className={`exec-check-btn status-${v}`}
-          onClick={handleQuickComplete}
-          title={
-            isDone
-              ? 'Reabrir como pendiente'
-              : `Marcar realizada (${ROLE_LABEL[currentUser]})`
-          }
-        >
-          {isDone ? <Check size={13} strokeWidth={2.8} /> : null}
-        </button>
+  const completedTimeStr = formatTime(execution.completedAt)
 
-        {/* Título + sucursal + fecha/ventana */}
+  return (
+    <div className={`exec-row exec-visual-${v} ${compact || isDone ? 'exec-row-compact' : ''} ${hideTitle ? 'exec-row-sub' : ''}`}>
+      <div className="exec-row-main">
+        {/* Acción principal de 1 clic */}
+        {mode !== 'AMBOS_INDIVIDUAL' && (
+          <button
+            type="button"
+            className={`exec-check-btn status-${v} ${isDone ? 'is-completed' : ''}`}
+            onClick={handleQuickComplete}
+            title={
+              isDone
+                ? 'Hacé clic para reabrir como pendiente'
+                : `Marcar ${actionVerb} (como ${ROLE_LABEL[currentUser]})`
+            }
+          >
+            {isDone ? <Check size={13} strokeWidth={2.8} /> : null}
+          </button>
+        )}
+
+        {/* Título / Datos de la actividad */}
         <div className="exec-info" onClick={() => onSelect(execution)}>
           <div className="exec-title-line">
-            <span className="exec-name">
-              {activity?.name || execution.activityName || 'Actividad'}
-            </span>
+            {!hideTitle && (
+              <span className="exec-name">
+                {activity?.name || execution.activityName || 'Actividad'}
+              </span>
+            )}
 
             <span
               className={`branch-pill branch-${execution.branch.toLowerCase()}`}
@@ -122,6 +165,18 @@ export function ExecutionRow({
             >
               {execution.branch === 'AMBAS' ? 'Ambas' : BRANCH_LABEL[execution.branch]}
             </span>
+
+            {mode === 'CONJUNTA' && (
+              <span className="exec-mode-pill mode-conjunta" title="Modalidad: Trabajo conjunto (RAC + Analista)">
+                <Users size={11} /> Conjunta
+              </span>
+            )}
+
+            {mode === 'AMBOS_INDIVIDUAL' && (
+              <span className="exec-mode-pill mode-ambos" title="Modalidad: Revisión individual de ambos">
+                <CheckCircle2 size={11} /> Ambos indiv.
+              </span>
+            )}
 
             {v !== 'pending' && v !== 'done' && (
               <span className={`state-badge state-${v}`}>
@@ -134,9 +189,17 @@ export function ExecutionRow({
               {dueBadgeText()}
             </span>
 
+            {/* Metadato discreto de cumplimiento */}
+            {isDone && (
+              <span className="exec-done-meta">
+                ✓ {actionVerb} por {execution.completedBy ? ROLE_LABEL[execution.completedBy] : ROLE_LABEL[execution.executor]}
+                {completedTimeStr ? ` · ${completedTimeStr}` : ''}
+              </span>
+            )}
+
             {execution.note && (
               <span className="exec-inline-note" title={execution.note}>
-                “{execution.note.length > 48 ? execution.note.slice(0, 48) + '…' : execution.note}”
+                “{execution.note.length > 40 ? execution.note.slice(0, 40) + '…' : execution.note}”
               </span>
             )}
 
@@ -153,158 +216,197 @@ export function ExecutionRow({
               </a>
             )}
           </div>
+
+          {/* Sublínea con botones para AMBOS_INDIVIDUAL */}
+          {mode === 'AMBOS_INDIVIDUAL' && (
+            <div className="exec-dual-confirm-row" onClick={e => e.stopPropagation()}>
+              <button
+                type="button"
+                className={`dual-confirm-btn ${execution.confirmations?.RAC?.status === 'REALIZADA' ? 'is-confirmed' : ''}`}
+                onClick={() => handleConfirmRole('RAC')}
+                title={execution.confirmations?.RAC?.status === 'REALIZADA' ? 'Confirmado por RAC. Clic para deshacer.' : 'Clic para confirmar como RAC'}
+              >
+                {execution.confirmations?.RAC?.status === 'REALIZADA' ? <Check size={11} strokeWidth={2.6} /> : <span className="dot-pending" />}
+                <span>RAC: {execution.confirmations?.RAC?.status === 'REALIZADA' ? actionVerb : 'Pendiente'}</span>
+                {execution.confirmations?.RAC?.completedAt && (
+                  <small>{formatTime(execution.confirmations.RAC.completedAt)}</small>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className={`dual-confirm-btn ${execution.confirmations?.ANALISTA?.status === 'REALIZADA' ? 'is-confirmed' : ''}`}
+                onClick={() => handleConfirmRole('ANALISTA')}
+                title={execution.confirmations?.ANALISTA?.status === 'REALIZADA' ? 'Confirmado por Analista. Clic para deshacer.' : 'Clic para confirmar como Analista'}
+              >
+                {execution.confirmations?.ANALISTA?.status === 'REALIZADA' ? <Check size={11} strokeWidth={2.6} /> : <span className="dot-pending" />}
+                <span>Analista: {execution.confirmations?.ANALISTA?.status === 'REALIZADA' ? actionVerb : 'Pendiente'}</span>
+                {execution.confirmations?.ANALISTA?.completedAt && (
+                  <small>{formatTime(execution.confirmations.ANALISTA.completedAt)}</small>
+                )}
+              </button>
+
+              <span className="dual-progress-tag">
+                {isDone
+                  ? '✓ Cumplido por ambos'
+                  : execution.confirmations?.RAC?.status === 'REALIZADA' || execution.confirmations?.ANALISTA?.status === 'REALIZADA'
+                  ? '1/2 completado'
+                  : '0/2 completado'}
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Controles rápidos: Ejecutor, Reprogramar ocasión, Observación, Menú */}
+        {/* Acciones de la fila: Botón de acción directo + Menú discreto ··· */}
         <div className="exec-Controls">
-          <div
-            className={`executor-switch ${isReassigned ? 'is-reassigned' : ''}`}
-            title={
-              isReassigned
-                ? `Responsable habitual: ${ROLE_LABEL[habitual]} · Ejecuta esta vez: ${ROLE_LABEL[execution.executor]}`
-                : `Responsable: ${ROLE_LABEL[habitual]}`
-            }
-          >
-            <select
-              aria-label="Ejecutor de la ocasión"
-              className="executor-select"
-              value={execution.executor}
-              onChange={e => onChangeExecutor(execution, e.target.value as Role)}
-            >
-              <option value="RAC">
-                RAC{habitual === 'RAC' ? '' : ' *'}
-              </option>
-              <option value="ANALISTA">
-                Analista{habitual === 'ANALISTA' ? '' : ' *'}
-              </option>
-            </select>
-          </div>
-
-          <div className="exec-quick-actions">
-            {!isDone && onReschedule && (
-              <button
-                type="button"
-                className={`btn-exec-icon ${showReschedule ? 'has-note' : ''}`}
-                onClick={() => {
-                  setShowReschedule(s => !s)
-                  setShowNoteBox(false)
-                  setShowNotDoneBox(false)
-                }}
-                title="Reprogramar o adelantar esta ejecución"
-              >
-                <Calendar size={13} />
-              </button>
-            )}
-
+          {!isDone && mode !== 'AMBOS_INDIVIDUAL' && (
             <button
               type="button"
-              className={`btn-exec-icon ${execution.note || showNoteBox ? 'has-note' : ''}`}
-              onClick={() => {
-                setNoteText(execution.note || '')
-                setEvidenceUrl(execution.evidence || '')
-                setShowNoteBox(s => !s)
-                setShowNotDoneBox(false)
-                setShowReschedule(false)
-              }}
-              title="Observación o enlace opcional"
+              className="btn-action-verb"
+              onClick={handleQuickComplete}
+              title={`Marcar ${actionVerb} en 1 clic`}
             >
-              <MessageSquarePlus size={13} />
+              <Check size={12} strokeWidth={2.4} />
+              <span>{actionVerb}</span>
+            </button>
+          )}
+
+          {isDone && (
+            <button
+              type="button"
+              className="btn-undo-action"
+              onClick={handleQuickComplete}
+              title="Deshacer cumplimiento"
+            >
+              <RotateCcw size={11} />
+              <span>Deshacer</span>
+            </button>
+          )}
+
+          {/* Menú de opciones secundarias (···) */}
+          <div className="context-menu-wrap">
+            <button
+              type="button"
+              className="btn-exec-icon"
+              onClick={() => setShowMenu(m => !m)}
+              title="Más opciones"
+            >
+              <MoreHorizontal size={14} />
             </button>
 
-            {!isDone && execution.status !== 'NO_REALIZADA' && (
-              <button
-                type="button"
-                className="btn-exec-icon btn-exec-notdone"
-                onClick={() => {
-                  setReasonText(execution.reason || '')
-                  setShowNotDoneBox(s => !s)
-                  setShowNoteBox(false)
-                  setShowReschedule(false)
-                }}
-                title="Marcar como No realizada"
-              >
-                <Ban size={12} />
-              </button>
-            )}
-
-            {isDone && (
-              <button
-                type="button"
-                className="btn-exec-icon"
-                onClick={() => onChangeStatus(execution, 'PENDIENTE')}
-                title="Reabrir"
-              >
-                <RotateCcw size={12} />
-              </button>
-            )}
-
-            {activity && (
-              <div className="context-menu-wrap">
+            {showMenu && (
+              <div className="context-dropdown" onMouseLeave={() => setShowMenu(false)}>
                 <button
                   type="button"
-                  className="btn-exec-icon"
-                  onClick={() => setShowMenu(m => !m)}
-                  title="Más opciones"
+                  onClick={() => {
+                    setShowMenu(false)
+                    onSelect(execution)
+                  }}
                 >
-                  <MoreHorizontal size={13} />
+                  <Clock size={13} /> Ver detalle e historial
                 </button>
-                {showMenu && (
-                  <div className="context-dropdown" onMouseLeave={() => setShowMenu(false)}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowMenu(false)
-                        onSelect(execution)
-                      }}
-                    >
-                      <Clock size={13} /> Detalle e historial
-                    </button>
-                    {!isDone && execution.status !== 'EN_CURSO' && (
+
+                {!isDone && onReschedule && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMenu(false)
+                      setShowReschedule(true)
+                      setShowNoteBox(false)
+                      setShowNotDoneBox(false)
+                    }}
+                  >
+                    <Calendar size={13} /> Reprogramar fecha
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMenu(false)
+                    setShowNoteBox(true)
+                    setShowReschedule(false)
+                    setShowNotDoneBox(false)
+                  }}
+                >
+                  <MessageSquarePlus size={13} /> Observación o evidencia
+                </button>
+
+                {!isDone && (
+                  <div className="dropdown-sub-action">
+                    <span className="dropdown-sub-label">Asignar ejecución:</span>
+                    <div className="dropdown-role-buttons">
                       <button
                         type="button"
+                        className={execution.executor === 'RAC' ? 'active' : ''}
                         onClick={() => {
+                          onChangeExecutor(execution, 'RAC')
                           setShowMenu(false)
-                          onChangeStatus(execution, 'EN_CURSO')
                         }}
                       >
-                        <Play size={13} /> Marcar en curso
+                        RAC
                       </button>
-                    )}
-                    {onEditActivity && (
                       <button
                         type="button"
+                        className={execution.executor === 'ANALISTA' ? 'active' : ''}
                         onClick={() => {
+                          onChangeExecutor(execution, 'ANALISTA')
                           setShowMenu(false)
-                          onEditActivity(activity)
                         }}
                       >
-                        <Edit3 size={13} /> Editar actividad
+                        Analista
                       </button>
-                    )}
-                    {onDuplicateActivity && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowMenu(false)
-                          onDuplicateActivity(activity)
-                        }}
-                      >
-                        <Copy size={13} /> Duplicar
-                      </button>
-                    )}
-                    {onTogglePauseActivity && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowMenu(false)
-                          onTogglePauseActivity(activity)
-                        }}
-                      >
-                        <PauseCircle size={13} />{' '}
-                        {activity.state === 'PAUSADA' ? 'Reactivar' : 'Pausar'}
-                      </button>
-                    )}
+                    </div>
                   </div>
+                )}
+
+                {!isDone && execution.status !== 'NO_REALIZADA' && (
+                  <button
+                    type="button"
+                    className="dropdown-item-danger"
+                    onClick={() => {
+                      setShowMenu(false)
+                      setShowNotDoneBox(true)
+                    }}
+                  >
+                    <Ban size={13} /> Marcar no realizada
+                  </button>
+                )}
+
+                {activity && onEditActivity && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMenu(false)
+                      onEditActivity(activity)
+                    }}
+                  >
+                    <Edit3 size={13} /> Editar catálogo
+                  </button>
+                )}
+
+                {activity && onDuplicateActivity && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMenu(false)
+                      onDuplicateActivity(activity)
+                    }}
+                  >
+                    <Copy size={13} /> Duplicar actividad
+                  </button>
+                )}
+
+                {activity && onTogglePauseActivity && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMenu(false)
+                      onTogglePauseActivity(activity)
+                    }}
+                  >
+                    <PauseCircle size={13} /> {activity.state === 'PAUSADA' ? 'Reactivar' : 'Pausar actividad'}
+                  </button>
                 )}
               </div>
             )}
@@ -312,7 +414,7 @@ export function ExecutionRow({
         </div>
       </div>
 
-      {/* Reprogramación rápida de esta ejecución (sin alterar futuras recurrencias) */}
+      {/* Reprogramación rápida */}
       {showReschedule && onReschedule && (
         <div className="exec-inline-drawer">
           <div className="reschedule-inline-row">
@@ -352,7 +454,7 @@ export function ExecutionRow({
         </div>
       )}
 
-      {/* Observación / evidencia opcional */}
+      {/* Observación / evidencia */}
       {showNoteBox && (
         <div className="exec-inline-drawer">
           <input
@@ -360,13 +462,13 @@ export function ExecutionRow({
             className="form-input"
             value={noteText}
             onChange={e => setNoteText(e.target.value)}
-            placeholder="Observación opcional…"
+            placeholder="Observación de la ejecución…"
           />
           <input
             className="form-input"
             value={evidenceUrl}
             onChange={e => setEvidenceUrl(e.target.value)}
-            placeholder="Enlace opcional a evidencia o documento (https://...)"
+            placeholder="Enlace de evidencia (https://...)"
           />
           <div className="drawer-actions">
             <button type="button" className="btn-secondary-sm" onClick={() => setShowNoteBox(false)}>
@@ -380,7 +482,7 @@ export function ExecutionRow({
                 setShowNoteBox(false)
               }}
             >
-              Guardar
+              Guardar nota
             </button>
             {!isDone && (
               <button
@@ -389,19 +491,20 @@ export function ExecutionRow({
                 onClick={() => {
                   onChangeStatus(execution, 'REALIZADA', {
                     note: noteText.trim() || undefined,
-                    evidence: evidenceUrl.trim() || undefined
+                    evidence: evidenceUrl.trim() || undefined,
+                    completedBy: currentUser
                   })
                   setShowNoteBox(false)
                 }}
               >
-                <Check size={13} /> Guardar y completar
+                <Check size={13} /> Guardar y marcar {actionVerb}
               </button>
             )}
           </div>
         </div>
       )}
 
-      {/* Motivo breve de No realizada */}
+      {/* Motivo de No realizada */}
       {showNotDoneBox && (
         <div className="exec-inline-drawer notdone-drawer">
           <input
@@ -409,7 +512,7 @@ export function ExecutionRow({
             className="form-input"
             value={reasonText}
             onChange={e => setReasonText(e.target.value)}
-            placeholder="Motivo breve (opcional)…"
+            placeholder="Motivo por el que no se realizó…"
           />
           <div className="drawer-actions">
             <button

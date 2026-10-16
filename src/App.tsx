@@ -17,8 +17,8 @@ import {
 } from './services/mappers'
 import { addDays, endOfMonth, startOfMonth, todayISO } from './lib/dates'
 import {
-  buildExecutions, pendingMaterialization, reconcileAfterRuleChange,
-  ruleChanged, statusPatch
+  buildExecutions, deduplicateActivities, pendingMaterialization,
+  reconcileAfterRuleChange, ruleChanged, statusPatch
 } from './lib/planner'
 import { ROLE_LABEL } from './lib/labels'
 import type { ActivityTemplate } from './lib/templates'
@@ -95,7 +95,7 @@ export default function App() {
   // ---------------- Estado del Planificador Operativo ----------------
   const [activities, setActivities] = useState<Activity[]>(() => {
     const parsed = loadJSON<Activity[]>('mi-tablero-activities', [])
-    return Array.isArray(parsed) ? parsed : []
+    return Array.isArray(parsed) ? deduplicateActivities(parsed) : []
   })
   const [executions, setExecutions] = useState<Execution[]>(() => {
     const parsed = loadJSON<Execution[]>('mi-tablero-executions', [])
@@ -175,7 +175,7 @@ export default function App() {
         }
         if (freshPlanner) {
           if (freshPlanner.activities.length > 0) {
-            setActivities(local => mergeWithPending(freshPlanner.activities, local))
+            setActivities(local => deduplicateActivities(mergeWithPending(freshPlanner.activities, local)))
           }
           if (freshPlanner.executions.length > 0) {
             setExecutions(local => mergeWithPending(freshPlanner.executions, local))
@@ -434,8 +434,9 @@ export default function App() {
     status: ExecStatus,
     extra?: Partial<Execution>
   ) => {
+    const basePatch = statusPatch(status, currentUser)
     const patch = {
-      ...statusPatch(status, currentUser),
+      ...basePatch,
       ...extra
     }
     upsertExecutionLocal(ex, patch)

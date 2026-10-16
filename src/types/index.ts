@@ -1,6 +1,7 @@
 export type Status = 'PENDIENTE' | 'HECHO' | 'ARCHIVADO'
 export type View = 'board' | 'today' | 'reminders' | 'calendar' | 'done' | 'archived' | 'activity'
-export type Section = 'board' | 'activities' | 'calendar'
+export type Section = 'board' | 'agenda'
+export type AgendaView = 'today' | 'week' | 'month'
 export type SyncStatus = 'local' | 'idle' | 'saving' | 'pending' | 'error' | 'offline' | 'auth'
 
 export type Note = {
@@ -92,13 +93,24 @@ export type Activity = {
   frequency: Frequency
   /** Cada cuántas unidades (semanas, meses…) se repite. Por defecto 1. */
   interval: number
-  /** Fecha de la primera ocurrencia; define el día de la semana / del mes. */
+  /** Fecha de la primera ocurrencia; define el día de la semana / del mes o vencimiento. */
   startDate: string
   endDate?: string
   /** La regla actual se aplica desde esta fecha (cambios de frecuencia no tocan el historial). */
   effectiveFrom?: string
-  /** Sólo para diarias: lunes a viernes. */
+  /** Para diarias o mensuales: respetar días hábiles (lunes a viernes). */
   businessDaysOnly: boolean
+  /**
+   * Si es true en una actividad semanal, aparece desde el lunes en "Flexibles de la semana"
+   * y recién se muestra en Hoy al acercarse su vencimiento.
+   */
+  flexible?: boolean
+  /**
+   * Para actividades mensuales (o trimestrales/anuales) con ventana de ejecución (ej. del 7 al 10):
+   * genera UNA sola ejecución en el período, activa desde windowStartDay hasta windowEndDay.
+   */
+  windowStartDay?: number
+  windowEndDay?: number
   branch: BranchScope
   /** Si la sucursal es AMBAS: registrar Jujuy y Salta por separado. */
   splitBranches: boolean
@@ -128,6 +140,8 @@ export type Execution = {
   period: string
   branch: BranchScope
   dueDate: string
+  /** Inicio de la ventana de ejecución cuando la actividad tiene ventana (ej. '2026-10-07'). */
+  windowStart?: string
   /** Quién la ejecuta en esta ocasión (puede diferir del responsable habitual). */
   executor: Role
   status: ExecStatus

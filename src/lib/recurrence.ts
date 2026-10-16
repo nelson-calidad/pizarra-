@@ -2,18 +2,20 @@
 // Calcula, para una actividad maestra, las ocurrencias que caen dentro de un rango.
 // Cada ocurrencia se identifica por PERÍODO (no por fecha) para que:
 //  - una actividad realizada no reaparezca como pendiente en el mismo período,
-//  - un cambio del día dentro del período no genere duplicados,
+//  - una actividad con ventana (ej. del 7 al 10) genere UNA SOLA ejecución en ese período,
 //  - recargas o dos equipos generen exactamente el mismo ID (idempotencia).
 
 import type { Activity, Branch, BranchScope, Execution, PlannerEvent } from '../types'
 import {
-  addDays, addMonthsClamped, diffDays, isoWeekKey, isValidISO, isWeekend,
-  maxDate, minDate, monthsBetween, parseISO, quarterOf, type ISODate
+  addDays, addMonthsClamped, daysInMonth, diffDays, fromParts, isoWeekKey, isValidISO,
+  isWeekend, maxDate, minDate, monthsBetween, parseISO, quarterOf, startOfWeek, weekday,
+  type ISODate
 } from './dates'
 
 export type Occurrence = {
   period: string
   dueDate: ISODate
+  windowStart?: ISODate
   branch: BranchScope
   eventId?: string
 }
@@ -53,7 +55,36 @@ export function activityBranches(a: Pick<Activity, 'branch' | 'splitBranches'>, 
   return base
 }
 
-/** Fechas (sin sucursal) de la regla dentro de [from, to]. */
+/** Si solo hábiles está activo en una fecha mensual/anual y cae fin de semana, corre al lunes (o viernes si cambia de mes). */
+function adjustToBusinessDayInMonth(d: ISODate): ISODate {
+  const w = weekday(d)
+  if (w !== 0 && w !== 6) return d
+  const shiftForward = w === 6 ? 2 : 1
+  const next = addDays(d, shiftForward)
+  if (next.slice(0, 7) === d.slice(0, 7)) return next
+  return addDays(d, w === 6 ? -1 : -2)
+}
+
+/** Calcula inicio de ventana para una fecha de vencimiento dada. */
+export function computeWindowStart(a: Activity, dueDate: ISODate): ISODate | undefined {
+  if (a.frequency === 'SEMANAL' && a.flexible) {
+    return startOfWeek(dueDate)
+  }
+  if (
+    MONTH_STEP[a.frequency] &&
+    a.windowStartDay &&
+    a.windowEndDay &&
+    a.windowEndDay >= a.windowStartDay
+  ) {
+    const { y, m } = parseISO(dueDate)
+    const maxD = daysInMonth(y, m)
+    const startD = Math.min(Math.max(1, a.windowStartDay), maxD)
+    return fromParts(y, m, startD)
+  }
+  return undefined
+}
+
+/** Fechas de vencimiento (sin sucursal) de la regla dentro de [from, to]. */
 export function ruleDates(a: Activity, from: ISODate, to: ISODate): ISODate[] {
   if (!isValidISO(a.startDate)) return []
   const lower = maxDate(from, a.startDate, isValidISO(a.effectiveFrom) ? a.effectiveFrom : undefined)
@@ -68,7 +99,6 @@ export function ruleDates(a: Activity, from: ISODate, to: ISODate): ISODate[] {
   }
 
   if (a.frequency === 'DIARIA') {
-    // Primer día >= lower alineado al intervalo desde la fecha inicial.
     const offset = diffDays(lower, a.startDate)
     let d = addDays(a.startDate, Math.ceil(offset / interval) * interval)
     let guard = 0
@@ -94,13 +124,33 @@ export function ruleDates(a: Activity, from: ISODate, to: ISODate): ISODate[] {
   const monthStep = MONTH_STEP[a.frequency]
   if (monthStep) {
     const step = monthStep * interval
-    const anchorDay = parseISO(a.startDate).d
-    let k = Math.max(0, Math.floor(monthsBetween(a.startDate, lower) / step) - 1)
+    // Si tiene ventana (ej. del 7 al 10), la fecha de vencimiento de la única ejecución es el fin de ventana (10)
+    const hasWindow =
+      a.windowStartDay !== undefined &&
+      a.windowEndDay !== undefined &&
+      a.windowEndDay >= a.windowStartDay
+    const anchorDay = hasWindow ? a.windowEndDay! : parseISO(a.startDate).d
+    const effectiveStart = hasWindow
+      ? fromParts(parseISO(a.startDate).y, parseISO(a.startDate).m, 1)
+      : a.startDate
+    const effectiveLower = hasWindow
+      ? maxDate(from, effectiveStart, isValidISO(a.effectiveFrom) ? a.effectiveFrom : undefined)
+      : lower
+
+    let k = Math.max(0, Math.floor(monthsBetween(a.startDate, effectiveLower) / step) - 1)
     let guard = 0
     while (guard++ < 1000) {
-      const d = addMonthsClamped(a.startDate, k * step, anchorDay)
-      if (d > upper) break
-      if (d >= lower) out.push(d)
+      let d = addMonthsClamped(a.startDate, k * step, anchorDay)
+      if (!hasWindow && a.businessDaysOnly) {
+        d = adjustToBusinessDayInMonth(d)
+      }
+      const winStart = computeWindowStart(a, d)
+      // Incluir si el vencimiento cae en [effectiveLower, upper] o si su ventana activa se solapa con [from, upper]
+      const inRange =
+        (d >= effectiveLower && d <= upper) ||
+        (winStart !== undefined && winStart <= upper && d >= from && d >= effectiveStart)
+      if (d > upper && (!winStart || winStart > upper)) break
+      if (inRange) out.push(d)
       k++
     }
     return out
@@ -109,7 +159,7 @@ export function ruleDates(a: Activity, from: ISODate, to: ISODate): ISODate[] {
   return out
 }
 
-/** Ocurrencias de una actividad dentro de [from, to], incluyendo sucursales y eventos. */
+/** Ocurrencias de una actividad dentro de [from, to], incluyendo sucursales, ventanas y eventos. */
 export function occurrences(a: Activity, from: ISODate, to: ISODate, events: PlannerEvent[] = []): Occurrence[] {
   if (a.frequency === 'EVENTO') {
     if (!a.eventType) return []
@@ -120,8 +170,6 @@ export function occurrences(a: Activity, from: ISODate, to: ISODate, events: Pla
       if (ev.state === 'CANCELADO' || ev.type !== a.eventType || !isValidISO(ev.date)) continue
       const due = addDays(ev.date, offset)
       if (due < from || due > to) continue
-      // Eventos ya ocurridos antes de que exista (o cambie) la regla no generan tareas retroactivas.
-      // Un evento futuro sí genera sus tareas aunque la fecha de preparación ya haya pasado.
       if (lowerBound && ev.date < lowerBound) continue
       for (const b of activityBranches(a, ev.branch)) {
         out.push({ period: periodKey(a, due, ev.id), dueDate: due, branch: b, eventId: ev.id })
@@ -131,7 +179,10 @@ export function occurrences(a: Activity, from: ISODate, to: ISODate, events: Pla
   }
   const out: Occurrence[] = []
   for (const d of ruleDates(a, from, to)) {
-    for (const b of activityBranches(a)) out.push({ period: periodKey(a, d), dueDate: d, branch: b })
+    const windowStart = computeWindowStart(a, d)
+    for (const b of activityBranches(a)) {
+      out.push({ period: periodKey(a, d), dueDate: d, windowStart, branch: b })
+    }
   }
   return out
 }
@@ -143,6 +194,7 @@ export function virtualExecution(a: Activity, o: Occurrence, nowIso: string): Ex
     period: o.period,
     branch: o.branch,
     dueDate: o.dueDate,
+    windowStart: o.windowStart,
     executor: a.responsible,
     status: 'PENDIENTE',
     eventId: o.eventId,

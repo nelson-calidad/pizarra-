@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import type { Activity, BranchScope, Frequency, Role } from '../types'
-import { todayISO } from '../lib/dates'
+import { addDays, parseISO, startOfWeek, todayISO, weekday } from '../lib/dates'
 import {
   BRANCH_LABEL, CATEGORIES, EVENT_TYPES, FREQ_LABEL, ROLE_LABEL, ROLE_LONG
 } from '../lib/labels'
@@ -15,27 +15,46 @@ type Props = {
   onClose: () => void
 }
 
+const WEEKDAY_OPTIONS: { dow: number; label: string }[] = [
+  { dow: 1, label: 'Lunes' },
+  { dow: 2, label: 'Martes' },
+  { dow: 3, label: 'Miércoles' },
+  { dow: 4, label: 'Jueves' },
+  { dow: 5, label: 'Viernes' },
+  { dow: 6, label: 'Sábado' },
+  { dow: 0, label: 'Domingo' }
+]
+
 export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, onClose }: Props) {
   const today = todayISO()
   const [name, setName] = useState(initial?.name || '')
-  const [frequency, setFrequency] = useState<Frequency>(initial?.frequency || 'MENSUAL')
+  const [frequency, setFrequency] = useState<Frequency>(initial?.frequency || 'SEMANAL')
   const [branch, setBranch] = useState<BranchScope>(initial?.branch || 'AMBAS')
   const [splitBranches, setSplitBranches] = useState<boolean>(
     initial?.splitBranches !== undefined ? initial.splitBranches : true
   )
   const [responsible, setResponsible] = useState<Role>(initial?.responsible || defaultRole)
   const [startDate, setStartDate] = useState(initial?.startDate || today)
-  const [description, setDescription] = useState(initial?.description || '')
 
-  // Opciones avanzadas
+  // Semanal fija vs. flexible
+  const [flexible, setFlexible] = useState<boolean>(Boolean(initial?.flexible))
+
+  // Mensual con fecha fija vs. ventana de días (ej. del 7 al 10)
+  const [useWindow, setUseWindow] = useState<boolean>(
+    Boolean(initial?.windowStartDay && initial?.windowEndDay)
+  )
+  const [windowStartDay, setWindowStartDay] = useState<number>(initial?.windowStartDay || 7)
+  const [windowEndDay, setWindowEndDay] = useState<number>(initial?.windowEndDay || 10)
+
+  // Opciones avanzadas colapsadas por defecto
   const [showAdvanced, setShowAdvanced] = useState(
     Boolean(
-      initial?.frequency === 'EVENTO' ||
       (initial?.interval && initial.interval > 1) ||
-      initial?.endDate ||
-      initial?.category
+        initial?.endDate ||
+        initial?.description
     )
   )
+  const [description, setDescription] = useState(initial?.description || '')
   const [interval, setIntervalVal] = useState<number>(initial?.interval || 1)
   const [businessDaysOnly, setBusinessDaysOnly] = useState<boolean>(
     initial?.businessDaysOnly !== undefined ? initial.businessDaysOnly : true
@@ -51,6 +70,14 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
   )
   const [showTemplates, setShowTemplates] = useState(false)
 
+  const selectedDow = weekday(startDate || today)
+
+  const selectWeekday = (targetDow: number) => {
+    const mon = startOfWeek(startDate || today)
+    const offset = targetDow === 0 ? 6 : targetDow - 1
+    setStartDate(addDays(mon, offset))
+  }
+
   const applyTemplate = (t: ActivityTemplate) => {
     setName(t.name)
     setDescription(t.description || '')
@@ -63,13 +90,24 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
     setCategory(t.category || 'Controles')
     if (t.eventType) setEventType(t.eventType)
     if (t.offsetDays !== undefined) setOffsetDays(t.offsetDays)
-    if (t.frequency === 'EVENTO') setShowAdvanced(true)
     setShowTemplates(false)
   }
+
+  const supportsWindow =
+    frequency === 'MENSUAL' ||
+    frequency === 'TRIMESTRAL' ||
+    frequency === 'SEMESTRAL' ||
+    frequency === 'ANUAL'
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
+    const hasWin = supportsWindow && useWindow
+    const wStart = hasWin ? Math.max(1, Math.min(31, Number(windowStartDay) || 1)) : undefined
+    const wEnd = hasWin
+      ? Math.max(wStart || 1, Math.min(31, Number(windowEndDay) || wStart || 1))
+      : undefined
+
     onSave(
       {
         name: name.trim(),
@@ -79,7 +117,11 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
         startDate: startDate || today,
         endDate: endDate || undefined,
         effectiveFrom: initial?.effectiveFrom,
-        businessDaysOnly: frequency === 'DIARIA' ? businessDaysOnly : false,
+        businessDaysOnly:
+          frequency === 'DIARIA' || supportsWindow ? businessDaysOnly : false,
+        flexible: frequency === 'SEMANAL' ? flexible : undefined,
+        windowStartDay: wStart,
+        windowEndDay: wEnd,
         branch,
         splitBranches: branch === 'AMBAS' ? splitBranches : false,
         responsible,
@@ -117,16 +159,13 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
               onClick={() => setShowTemplates(s => !s)}
             >
               <Sparkles size={13} />
-              <span>{showTemplates ? 'Ocultar ejemplos' : 'Usar ejemplo de Calidad'}</span>
+              <span>{showTemplates ? 'Ocultar ejemplos' : 'Ejemplos rápidos'}</span>
             </button>
           )}
         </div>
 
         {showTemplates && (
           <div className="template-picker">
-            <p className="template-picker-hint">
-              Elegí una actividad habitual para completar el formulario y ajustala a tu medida:
-            </p>
             <div className="template-picker-list">
               {SUGGESTED_TEMPLATES.map(t => (
                 <button
@@ -145,29 +184,27 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
           </div>
         )}
 
+        {/* 1. Nombre */}
         <label className="form-block">
-          <span className="form-label">Nombre de la actividad *</span>
+          <span className="form-label">Nombre *</span>
           <input
             autoFocus
             required
             className="form-input form-input-lg"
             value={name}
             onChange={e => setName(e.target.value)}
-            placeholder="Ej.: Control periódico de órdenes de reparación"
+            placeholder="Ej.: Recorrida de Taller Salta, Actualizar IPSOS…"
           />
         </label>
 
+        {/* 2. Frecuencia + Día o ventana de ejecución */}
         <div className="form-grid-2">
           <label className="form-block">
             <span className="form-label">Frecuencia</span>
             <select
               className="form-select"
               value={frequency}
-              onChange={e => {
-                const f = e.target.value as Frequency
-                setFrequency(f)
-                if (f === 'EVENTO') setShowAdvanced(true)
-              }}
+              onChange={e => setFrequency(e.target.value as Frequency)}
             >
               {(Object.keys(FREQ_LABEL) as Frequency[]).map(f => (
                 <option key={f} value={f}>
@@ -177,22 +214,46 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
             </select>
           </label>
 
-          {frequency !== 'EVENTO' ? (
+          {frequency === 'SEMANAL' ? (
             <label className="form-block">
               <span className="form-label">
-                {frequency === 'UNICA' ? 'Fecha de vencimiento' : 'Fecha inicial / próxima'}
+                {flexible ? 'Vence el día' : 'Día de ejecución'}
               </span>
-              <input
-                type="date"
-                required
-                className="form-input"
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-              />
+              <select
+                className="form-select"
+                value={selectedDow}
+                onChange={e => selectWeekday(Number(e.target.value))}
+              >
+                {WEEKDAY_OPTIONS.map(w => (
+                  <option key={w.dow} value={w.dow}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
             </label>
-          ) : (
+          ) : frequency === 'DIARIA' ? (
+            <div className="form-block">
+              <span className="form-label">Días de ejecución</span>
+              <div className="segmented-control">
+                <button
+                  type="button"
+                  className={businessDaysOnly ? 'active' : ''}
+                  onClick={() => setBusinessDaysOnly(true)}
+                >
+                  Lunes a viernes
+                </button>
+                <button
+                  type="button"
+                  className={!businessDaysOnly ? 'active' : ''}
+                  onClick={() => setBusinessDaysOnly(false)}
+                >
+                  Todos los días
+                </button>
+              </div>
+            </div>
+          ) : frequency === 'EVENTO' ? (
             <label className="form-block">
-              <span className="form-label">Evento que la activa</span>
+              <span className="form-label">Evento vinculado</span>
               <select
                 className="form-select"
                 value={eventType}
@@ -205,12 +266,92 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
                 ))}
               </select>
             </label>
+          ) : (
+            <label className="form-block">
+              <span className="form-label">
+                {frequency === 'UNICA' ? 'Fecha' : 'Fecha / mes inicial'}
+              </span>
+              <input
+                type="date"
+                required
+                className="form-input"
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+              />
+            </label>
           )}
         </div>
 
+        {/* Selector de modalidad para Semanal (Fija vs. Flexible de la semana) */}
+        {frequency === 'SEMANAL' && (
+          <div className="form-window-bar">
+            <span className="form-label">Modalidad semanal:</span>
+            <div className="segmented-control segmented-sm">
+              <button
+                type="button"
+                className={!flexible ? 'active' : ''}
+                onClick={() => setFlexible(false)}
+              >
+                Día fijo
+              </button>
+              <button
+                type="button"
+                className={flexible ? 'active' : ''}
+                onClick={() => setFlexible(true)}
+              >
+                Flexible en la semana
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Selector de modalidad para Mensual / Trimestral (Fecha fija vs. Ventana de días, ej. del 7 al 10) */}
+        {supportsWindow && (
+          <div className="form-window-bar">
+            <div className="segmented-control segmented-sm">
+              <button
+                type="button"
+                className={!useWindow ? 'active' : ''}
+                onClick={() => setUseWindow(false)}
+              >
+                Día fijo ({parseISO(startDate || today).d})
+              </button>
+              <button
+                type="button"
+                className={useWindow ? 'active' : ''}
+                onClick={() => setUseWindow(true)}
+              >
+                Ventana de días (1 sola ejecución)
+              </button>
+            </div>
+
+            {useWindow && (
+              <div className="window-days-inputs">
+                <span>Del día</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  className="form-input window-day-input"
+                  value={windowStartDay}
+                  onChange={e => setWindowStartDay(Math.max(1, Math.min(31, Number(e.target.value) || 1)))}
+                />
+                <span>al</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  className="form-input window-day-input"
+                  value={windowEndDay}
+                  onChange={e => setWindowEndDay(Math.max(1, Math.min(31, Number(e.target.value) || 1)))}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
         {frequency === 'EVENTO' && (
           <div className="form-event-offset">
-            <span className="form-label">Cuándo realizarla respecto de la fecha real del evento:</span>
             <div className="offset-controls">
               <input
                 type="number"
@@ -230,27 +371,28 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
                   className={offsetDays < 0 ? 'active' : ''}
                   onClick={() => setOffsetDays(-Math.max(1, Math.abs(offsetDays)))}
                 >
-                  Antes del evento
+                  Antes
                 </button>
                 <button
                   type="button"
                   className={offsetDays === 0 ? 'active' : ''}
                   onClick={() => setOffsetDays(0)}
                 >
-                  El mismo día
+                  Mismo día
                 </button>
                 <button
                   type="button"
                   className={offsetDays > 0 ? 'active' : ''}
                   onClick={() => setOffsetDays(Math.max(1, Math.abs(offsetDays)))}
                 >
-                  Después del evento
+                  Después
                 </button>
               </div>
             </div>
           </div>
         )}
 
+        {/* 3. Sucursal y Responsable habitual */}
         <div className="form-grid-2">
           <div className="form-block">
             <span className="form-label">Sucursal</span>
@@ -267,13 +409,13 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
               ))}
             </div>
             {branch === 'AMBAS' && (
-              <label className="checkbox-inline" title="Permite marcar Jujuy realizado y Salta pendiente (o viceversa)">
+              <label className="checkbox-inline">
                 <input
                   type="checkbox"
                   checked={splitBranches}
                   onChange={e => setSplitBranches(e.target.checked)}
                 />
-                <span>Controlar Jujuy y Salta por separado</span>
+                <span>Cumplimiento separado Jujuy / Salta</span>
               </label>
             )}
           </div>
@@ -293,23 +435,10 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
                 </button>
               ))}
             </div>
-            <small className="form-hint">
-              Cada ejecución puede reasignarse sin cambiar el responsable habitual.
-            </small>
           </div>
         </div>
 
-        <label className="form-block">
-          <span className="form-label">Descripción u orientación breve (opcional)</span>
-          <textarea
-            className="form-textarea"
-            rows={2}
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            placeholder="Qué revisar, criterio o recordatorio clave…"
-          />
-        </label>
-
+        {/* Opciones avanzadas opcionales */}
         <button
           type="button"
           className="btn-advanced-toggle"
@@ -321,9 +450,19 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
 
         {showAdvanced && (
           <div className="advanced-box">
+            <label className="form-block">
+              <span className="form-label">Nota / orientación breve</span>
+              <input
+                className="form-input"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                placeholder="Opcional…"
+              />
+            </label>
+
             <div className="form-grid-3">
               <label className="form-block">
-                <span className="form-label">Área / Tipo</span>
+                <span className="form-label">Área</span>
                 <select
                   className="form-select"
                   value={category}
@@ -339,30 +478,15 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
 
               {frequency !== 'UNICA' && frequency !== 'EVENTO' && (
                 <label className="form-block">
-                  <span className="form-label">Repetir cada</span>
-                  <div className="inline-number-unit">
-                    <input
-                      type="number"
-                      min={1}
-                      max={24}
-                      className="form-input"
-                      value={interval}
-                      onChange={e => setIntervalVal(Math.max(1, Number(e.target.value) || 1))}
-                    />
-                    <span className="unit-label">
-                      {frequency === 'DIARIA'
-                        ? 'día(s)'
-                        : frequency === 'SEMANAL'
-                        ? 'semana(s)'
-                        : frequency === 'MENSUAL'
-                        ? 'mes(es)'
-                        : frequency === 'TRIMESTRAL'
-                        ? 'trim.'
-                        : frequency === 'SEMESTRAL'
-                        ? 'sem.'
-                        : 'año(s)'}
-                    </span>
-                  </div>
+                  <span className="form-label">Cada cuántas</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    className="form-input"
+                    value={interval}
+                    onChange={e => setIntervalVal(Math.max(1, Number(e.target.value) || 1))}
+                  />
                 </label>
               )}
 
@@ -373,34 +497,45 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
                   min={0}
                   max={60}
                   className="form-input"
-                  placeholder="Automático"
+                  placeholder="Auto"
                   value={leadDays}
                   onChange={e => setLeadDays(e.target.value)}
                 />
               </label>
             </div>
 
-            {frequency === 'DIARIA' && (
+            {supportsWindow && !useWindow && (
               <label className="checkbox-inline">
                 <input
                   type="checkbox"
                   checked={businessDaysOnly}
                   onChange={e => setBusinessDaysOnly(e.target.checked)}
                 />
-                <span>Solo días hábiles (lunes a viernes)</span>
+                <span>Si cae fin de semana, pasar al día hábil</span>
               </label>
             )}
 
             {frequency !== 'UNICA' && frequency !== 'EVENTO' && (
-              <label className="form-block" style={{ marginTop: 8 }}>
-                <span className="form-label">Finalizar repetición el (opcional)</span>
-                <input
-                  type="date"
-                  className="form-input"
-                  value={endDate}
-                  onChange={e => setEndDate(e.target.value)}
-                />
-              </label>
+              <div className="form-grid-2" style={{ marginTop: 8 }}>
+                <label className="form-block">
+                  <span className="form-label">Desde fecha</span>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={startDate}
+                    onChange={e => setStartDate(e.target.value)}
+                  />
+                </label>
+                <label className="form-block">
+                  <span className="form-label">Hasta fecha (opcional)</span>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={endDate}
+                    onChange={e => setEndDate(e.target.value)}
+                  />
+                </label>
+              </div>
             )}
           </div>
         )}
@@ -417,4 +552,3 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
     </div>
   )
 }
-

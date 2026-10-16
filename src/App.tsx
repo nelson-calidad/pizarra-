@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  LayoutGrid, CheckSquare, CalendarDays, Search, Plus, Settings, X,
+  LayoutGrid, CalendarDays, Search, Plus, Settings, X,
   User, Users, StickyNote, CalendarClock
 } from 'lucide-react'
 import './App.css'
@@ -24,8 +24,7 @@ import { ROLE_LABEL } from './lib/labels'
 import type { ActivityTemplate } from './lib/templates'
 
 import { BoardSection, NoteDetail, isNoteOverdue } from './components/BoardSection'
-import { ActivitiesSection } from './components/ActivitiesSection'
-import { CalendarSection } from './components/CalendarSection'
+import { AgendaSection } from './components/AgendaSection'
 import { ActivityModal } from './components/ActivityModal'
 import { ExecutionDetail } from './components/ExecutionDetail'
 import { EventsPanel } from './components/EventsPanel'
@@ -60,8 +59,8 @@ export default function App() {
   const today = todayISO()
   const tomorrow = addDays(today, 1)
 
-  // Navegación principal: únicamente las 3 secciones solicitadas
-  const [section, setSection] = useState<Section>('activities')
+  // Navegación principal: únicamente DOS secciones (Agenda y Pizarra). Vista inicial: Agenda (Hoy)
+  const [section, setSection] = useState<Section>('agenda')
 
   // Rol del operador en este dispositivo (RAC o ANALISTA)
   const [currentUser, setCurrentUser] = useState<Role>(() => {
@@ -73,7 +72,7 @@ export default function App() {
     localStorage.setItem('mi-tablero-role', currentUser)
   }, [currentUser])
 
-  // Filtros rápidos compartidos entre Actividades y Calendario
+  // Filtros discretos de Agenda (Todos / RAC / Analista · Ambas / Jujuy / Salta)
   const [personFilter, setPersonFilter] = useState<Role | 'TODOS'>('TODOS')
   const [branchFilter, setBranchFilter] = useState<BranchScope | 'TODAS'>('TODAS')
   const [query, setQuery] = useState('')
@@ -346,7 +345,7 @@ export default function App() {
       }
       setActivities(list => [...list, created])
       enqueue('upsertActivity', created.id, activityToSheet(created))
-      if (section === 'board') setSection('activities')
+      if (section === 'board') setSection('agenda')
     }
     setActivityModal({ open: false })
   }
@@ -424,8 +423,40 @@ export default function App() {
     upsertExecutionLocal(ex, patch)
   }
 
+  const handleBatchResolveBacklog = (
+    items: Execution[],
+    status: ExecStatus,
+    reason?: string
+  ) => {
+    if (!items.length) return
+    const now = new Date().toISOString()
+    const patch = statusPatch(status, currentUser, reason)
+    const mergedList: Execution[] = items.map(ex => ({
+      ...ex,
+      ...patch,
+      virtual: false,
+      updatedAt: now
+    }))
+    setExecutions(list => {
+      const map = new Map(list.map(e => [e.id, e]))
+      for (const m of mergedList) {
+        map.set(m.id, m)
+      }
+      return Array.from(map.values())
+    })
+    enqueue('batchUpsertExecutions', undefined, mergedList.map(executionToSheet))
+  }
+
   const handleChangeExecutor = (ex: Execution, executor: Role) => {
     upsertExecutionLocal(ex, { executor })
+  }
+
+  const handleRescheduleExecution = (ex: Execution, newDate: string) => {
+    if (!newDate) return
+    upsertExecutionLocal(ex, {
+      dueDate: newDate,
+      status: ex.status === 'PENDIENTE' ? 'PENDIENTE' : ex.status
+    })
   }
 
   const handleSaveObservation = (ex: Execution, note: string, evidence?: string) => {
@@ -498,7 +529,7 @@ export default function App() {
     [memberNotes, boardFilter, query, today]
   )
 
-  // Contador de ejecuciones pendientes/vencidas del mes actual para el badge de Actividades
+  // Contador de ejecuciones pendientes del mes actual para el badge de Agenda
   const currentMonthPendingCount = useMemo(() => {
     const mFrom = startOfMonth(today)
     const mTo = endOfMonth(today)
@@ -531,7 +562,7 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* BARRA LATERAL CON LAS 3 SECCIONES PRINCIPALES */}
+      {/* BARRA LATERAL MINIMALISTA: ÚNICAMENTE 2 SECCIONES (AGENDA Y PIZARRA) */}
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-logo">A</div>
@@ -544,6 +575,20 @@ export default function App() {
         <nav className="sidebar-nav" aria-label="Navegación principal">
           <button
             type="button"
+            className={`nav-item ${section === 'agenda' ? 'active' : ''}`}
+            onClick={() => setSection('agenda')}
+          >
+            <span className="nav-icon">
+              <CalendarDays size={18} strokeWidth={1.9} />
+            </span>
+            <span className="nav-label">Agenda</span>
+            {currentMonthPendingCount > 0 && (
+              <em className="badge-count">{currentMonthPendingCount}</em>
+            )}
+          </button>
+
+          <button
+            type="button"
             className={`nav-item ${section === 'board' ? 'active' : ''}`}
             onClick={() => setSection('board')}
           >
@@ -554,31 +599,6 @@ export default function App() {
             {pendingNotes.length > 0 && (
               <em className="badge-count badge-subtle">{pendingNotes.length}</em>
             )}
-          </button>
-
-          <button
-            type="button"
-            className={`nav-item ${section === 'activities' ? 'active' : ''}`}
-            onClick={() => setSection('activities')}
-          >
-            <span className="nav-icon">
-              <CheckSquare size={18} strokeWidth={1.9} />
-            </span>
-            <span className="nav-label">Actividades</span>
-            {currentMonthPendingCount > 0 && (
-              <em className="badge-count">{currentMonthPendingCount}</em>
-            )}
-          </button>
-
-          <button
-            type="button"
-            className={`nav-item ${section === 'calendar' ? 'active' : ''}`}
-            onClick={() => setSection('calendar')}
-          >
-            <span className="nav-icon">
-              <CalendarDays size={18} strokeWidth={1.9} />
-            </span>
-            <span className="nav-label">Calendario</span>
           </button>
         </nav>
 
@@ -633,21 +653,16 @@ export default function App() {
         ) : (
           <div className="sidebar-section">
             <div className="sidebar-section-header">
-              <span className="sidebar-section-title">FILTROS RÁPIDOS</span>
+              <span className="sidebar-section-title">RESPONSABLE</span>
             </div>
             <div className="workspace-tabs-list">
               <button
                 type="button"
-                className={`workspace-tab-item ${
-                  personFilter === 'TODOS' && branchFilter === 'TODAS' ? 'active' : ''
-                }`}
-                onClick={() => {
-                  setPersonFilter('TODOS')
-                  setBranchFilter('TODAS')
-                }}
+                className={`workspace-tab-item ${personFilter === 'TODOS' ? 'active' : ''}`}
+                onClick={() => setPersonFilter('TODOS')}
               >
                 <Users size={15} />
-                <span className="workspace-tab-name">Todo el equipo</span>
+                <span className="workspace-tab-name">Todos</span>
               </button>
               <button
                 type="button"
@@ -655,7 +670,7 @@ export default function App() {
                 onClick={() => setPersonFilter(p => (p === 'RAC' ? 'TODOS' : 'RAC'))}
               >
                 <User size={15} />
-                <span className="workspace-tab-name">Asignadas al RAC</span>
+                <span className="workspace-tab-name">RAC</span>
               </button>
               <button
                 type="button"
@@ -665,12 +680,12 @@ export default function App() {
                 }
               >
                 <User size={15} />
-                <span className="workspace-tab-name">Asignadas a Analista</span>
+                <span className="workspace-tab-name">Analista</span>
               </button>
             </div>
 
             <div className="sidebar-section-header" style={{ marginTop: 14 }}>
-              <span className="sidebar-section-title">SUCURSALES</span>
+              <span className="sidebar-section-title">SUCURSAL</span>
             </div>
             <div className="workspace-tabs-list">
               <button
@@ -679,7 +694,7 @@ export default function App() {
                 onClick={() => setBranchFilter('TODAS')}
               >
                 <span className="cat-dot" style={{ background: '#6366f1' }} />
-                <span className="workspace-tab-name">Jujuy y Salta</span>
+                <span className="workspace-tab-name">Ambas sucursales</span>
               </button>
               <button
                 type="button"
@@ -687,7 +702,7 @@ export default function App() {
                 onClick={() => setBranchFilter(b => (b === 'JUJUY' ? 'TODAS' : 'JUJUY'))}
               >
                 <span className="cat-dot" style={{ background: '#0284c7' }} />
-                <span className="workspace-tab-name">Sucursal Jujuy</span>
+                <span className="workspace-tab-name">Jujuy</span>
               </button>
               <button
                 type="button"
@@ -695,7 +710,7 @@ export default function App() {
                 onClick={() => setBranchFilter(b => (b === 'SALTA' ? 'TODAS' : 'SALTA'))}
               >
                 <span className="cat-dot" style={{ background: '#ea580c' }} />
-                <span className="workspace-tab-name">Sucursal Salta</span>
+                <span className="workspace-tab-name">Salta</span>
               </button>
             </div>
           </div>
@@ -863,38 +878,8 @@ export default function App() {
             />
           )}
 
-          {section === 'activities' && (
-            <ActivitiesSection
-              activities={activities}
-              persistedExecutions={executions}
-              events={events}
-              today={today}
-              currentUser={currentUser}
-              personFilter={personFilter}
-              onPersonFilterChange={setPersonFilter}
-              branchFilter={branchFilter}
-              onBranchFilterChange={setBranchFilter}
-              query={query}
-              onChangeStatus={handleChangeExecStatus}
-              onChangeExecutor={handleChangeExecutor}
-              onSaveObservation={handleSaveObservation}
-              onSelectExecution={ex => setSelectedExecId(ex.id)}
-              onOpenNewActivity={prefill =>
-                setActivityModal({ open: true, initial: prefill, isEdit: false })
-              }
-              onEditActivity={act =>
-                setActivityModal({ open: true, initial: act, isEdit: true })
-              }
-              onDuplicateActivity={duplicateActivity}
-              onTogglePauseActivity={togglePauseActivity}
-              onDeleteActivity={deactivateActivity}
-              onOpenEvents={() => setEventsOpen(true)}
-              onQuickCreateTemplate={quickCreateFromTemplate}
-            />
-          )}
-
-          {section === 'calendar' && (
-            <CalendarSection
+          {section === 'agenda' && (
+            <AgendaSection
               activities={activities}
               persistedExecutions={executions}
               events={events}
@@ -907,11 +892,23 @@ export default function App() {
               onBranchFilterChange={setBranchFilter}
               query={query}
               onChangeStatus={handleChangeExecStatus}
+              onBatchResolveBacklog={handleBatchResolveBacklog}
               onChangeExecutor={handleChangeExecutor}
+              onRescheduleExecution={handleRescheduleExecution}
               onSaveObservation={handleSaveObservation}
               onSelectExecution={ex => setSelectedExecId(ex.id)}
               onSelectNote={n => setSelectedNote(n)}
+              onOpenNewActivity={prefill =>
+                setActivityModal({ open: true, initial: prefill, isEdit: false })
+              }
+              onEditActivity={act =>
+                setActivityModal({ open: true, initial: act, isEdit: true })
+              }
+              onDuplicateActivity={duplicateActivity}
+              onTogglePauseActivity={togglePauseActivity}
+              onDeleteActivity={deactivateActivity}
               onOpenEvents={() => setEventsOpen(true)}
+              onQuickCreateTemplate={quickCreateFromTemplate}
             />
           )}
         </div>
@@ -1018,7 +1015,7 @@ export default function App() {
             setPaletteOpen(false)
           }}
           onSelectActivity={a => {
-            setSection('activities')
+            setSection('agenda')
             setActivityModal({ open: true, initial: a, isEdit: true })
             setPaletteOpen(false)
           }}
@@ -1251,9 +1248,8 @@ function QuickPalette({
           </button>
           {(
             [
-              ['activities', 'Ir a Actividades'],
-              ['board', 'Ir a Pizarra'],
-              ['calendar', 'Ir a Calendario']
+              ['agenda', 'Ir a Agenda'],
+              ['board', 'Ir a Pizarra']
             ] as [Section, string][]
           ).map(([s, label]) => (
             <button className="palette-cmd-btn" onClick={() => onGoSection(s)} key={s}>

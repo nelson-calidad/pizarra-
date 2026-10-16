@@ -3,7 +3,8 @@ import type { Activity, Execution, PlannerEvent } from '../../types'
 import { addMonthsClamped, isoWeekKey, isLeapYear, isValidISO, addDays } from '../dates'
 import { occurrences, ruleDates, executionId, periodKey } from '../recurrence'
 import {
-  buildExecutions, pendingMaterialization, reconcileAfterRuleChange, summarize, visualState,
+  buildExecutions, buildTodayView, buildWeekView, pendingMaterialization,
+  reconcileAfterRuleChange, summarize, visualState,
   matchesFilter, completionPatch, ruleChanged
 } from '../planner'
 import { describeRule } from '../labels'
@@ -244,4 +245,119 @@ describe('ejecuciones', () => {
     expect(executionId('A', '2026-10', 'SALTA')).toBe('A__2026-10__SALTA')
   })
 })
+
+describe('Etapa 2 — Reglas de Agenda (Hoy, Semana, Ventanas Mensuales y Flexibles)', () => {
+  it('actividad semanal fija en martes aparece en Hoy el martes y no el lunes', () => {
+    const tuesdayTask = base({
+      id: 'SEM_MAR',
+      name: 'Viaje de trabajo a Salta',
+      frequency: 'SEMANAL',
+      startDate: '2026-10-13', // martes
+      flexible: false,
+      branch: 'SALTA'
+    })
+    const onMonday = buildTodayView([tuesdayTask], [], [], '2026-10-12')
+    expect(onMonday.todayTasks).toHaveLength(0)
+    expect(onMonday.flexibleSoon).toHaveLength(0)
+
+    const onTuesday = buildTodayView([tuesdayTask], [], [], '2026-10-13')
+    expect(onTuesday.todayTasks).toHaveLength(1)
+    expect(onTuesday.todayTasks[0].activityId).toBe('SEM_MAR')
+  })
+
+  it('actividad semanal flexible (vence viernes) aparece en Semana desde el lunes y se destaca en Hoy al acercarse el viernes', () => {
+    const flexFri = base({
+      id: 'SEM_FLEX',
+      name: 'Avanzar con documentación ambiental',
+      frequency: 'SEMANAL',
+      startDate: '2026-10-16', // viernes
+      flexible: true,
+      branch: 'AMBAS',
+      splitBranches: false
+    })
+
+    // Lunes 12/10: está en Semana -> Flexibles de la semana, pero no satura Hoy
+    const weekOnMon = buildWeekView([flexFri], [], [], '2026-10-12', '2026-10-12')
+    expect(weekOnMon.flexibleWeek).toHaveLength(1)
+    expect(weekOnMon.flexibleWeek[0].dueDate).toBe('2026-10-16')
+
+    const todayOnMon = buildTodayView([flexFri], [], [], '2026-10-12')
+    expect(todayOnMon.todayTasks).toHaveLength(0)
+    expect(todayOnMon.flexibleSoon).toHaveLength(0)
+
+    // Jueves 15/10 (a 1 día del viernes): se destaca en Hoy -> Próximas a vencer
+    const todayOnThu = buildTodayView([flexFri], [], [], '2026-10-15')
+    expect(todayOnThu.flexibleSoon).toHaveLength(1)
+    expect(todayOnThu.flexibleSoon[0].activityId).toBe('SEM_FLEX')
+
+    // Viernes 16/10: pasa a Para hoy
+    const todayOnFri = buildTodayView([flexFri], [], [], '2026-10-16')
+    expect(todayOnFri.todayTasks).toHaveLength(1)
+  })
+
+  it('actividad mensual con ventana 7 al 10 genera una sola ejecución, permanece activa en Hoy entre el 7 y el 10, y desaparece de pendientes al completarse', () => {
+    const cem = base({
+      id: 'CEM',
+      name: 'Comunicar resultados CEM del mes anterior',
+      frequency: 'MENSUAL',
+      startDate: '2026-10-01',
+      windowStartDay: 7,
+      windowEndDay: 10,
+      branch: 'AMBAS',
+      splitBranches: false
+    })
+
+    // Genera una única ejecución en el mes
+    const octList = buildExecutions([cem], [], [], '2026-10-01', '2026-10-31')
+    expect(octList).toHaveLength(1)
+    expect(octList[0].windowStart).toBe('2026-10-07')
+    expect(octList[0].dueDate).toBe('2026-10-10')
+
+    // Día 6: aún fuera de ventana
+    expect(buildTodayView([cem], [], [], '2026-10-06').todayTasks).toHaveLength(0)
+
+    // Días 7, 8, 9 y 10: activa en Para hoy mientras siga pendiente
+    for (const day of ['2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10']) {
+      const view = buildTodayView([cem], [], [], day)
+      expect(view.todayTasks).toHaveLength(1)
+      expect(view.todayTasks[0].id).toBe('CEM__2026-10__AMBAS')
+    }
+
+    // Si se marca realizada el día 8, desaparece de pendientes el 8, 9 y 10
+    const completedOn8: Execution = {
+      ...octList[0],
+      virtual: false,
+      status: 'REALIZADA',
+      completedAt: '2026-10-08T14:00:00Z',
+      completedBy: 'RAC',
+      executor: 'RAC'
+    }
+    const viewAfterDoneOn8 = buildTodayView([cem], [completedOn8], [], '2026-10-08')
+    expect(viewAfterDoneOn8.todayTasks).toHaveLength(0)
+    expect(viewAfterDoneOn8.completedToday).toHaveLength(1)
+
+    const viewOn9AfterDone = buildTodayView([cem], [completedOn8], [], '2026-10-09')
+    expect(viewOn9AfterDone.todayTasks).toHaveLength(0)
+    expect(viewOn9AfterDone.overdueTasks).toHaveLength(0)
+  })
+
+  it('actividades diarias vencidas (2 o más días) se agrupan de forma compacta en dailyBacklog sin saturar overdueTasks', () => {
+    const daily = base({
+      id: 'IPSOS',
+      name: 'Actualizar IPSOS',
+      frequency: 'DIARIA',
+      businessDaysOnly: true,
+      startDate: '2026-10-05',
+      branch: 'AMBAS',
+      splitBranches: false
+    })
+    // Hoy viernes 2026-10-09: lunes 5, martes 6, miércoles 7 y jueves 8 están vencidas (4 días)
+    const view = buildTodayView([daily], [], [], '2026-10-09')
+    expect(view.todayTasks).toHaveLength(1) // viernes 9
+    expect(view.overdueTasks).toHaveLength(0) // no satura la lista individual
+    expect(view.dailyBacklog).toHaveLength(1)
+    expect(view.dailyBacklog[0].items).toHaveLength(4)
+  })
+})
+
 

@@ -2,15 +2,15 @@
 // Sin dependencias de React: se prueba de forma aislada.
 
 import type { Activity, Execution, ExecStatus, PlannerEvent, Role, BranchScope, Frequency } from '../types'
-import { addDays, diffDays, type ISODate } from './dates'
-import { occurrences, virtualExecution } from './recurrence'
+import { addDays, diffDays, startOfWeek, isWeekend, type ISODate } from './dates'
+import { computeWindowStart, occurrences, virtualExecution } from './recurrence'
 
 export type Visual = 'done' | 'notdone' | 'overdue' | 'soon' | 'progress' | 'pending'
 
 export const DEFAULT_LEAD: Record<Frequency, number> = {
-  UNICA: 3,
+  UNICA: 2,
   DIARIA: 0,
-  SEMANAL: 1,
+  SEMANAL: 2,
   MENSUAL: 3,
   TRIMESTRAL: 7,
   SEMESTRAL: 7,
@@ -20,18 +20,36 @@ export const DEFAULT_LEAD: Record<Frequency, number> = {
 
 export const isResolved = (s: ExecStatus) => s === 'REALIZADA' || s === 'NO_REALIZADA'
 
-export function leadDaysFor(a?: Pick<Activity, 'frequency' | 'leadDays'>) {
-  if (!a) return 3
+export function leadDaysFor(a?: Pick<Activity, 'frequency' | 'leadDays' | 'flexible'>) {
+  if (!a) return 2
   const n = Number(a.leadDays)
-  return Number.isFinite(n) && a.leadDays !== undefined && a.leadDays !== null ? Math.max(0, n) : DEFAULT_LEAD[a.frequency]
+  if (Number.isFinite(n) && a.leadDays !== undefined && a.leadDays !== null) {
+    return Math.max(0, n)
+  }
+  if (a.frequency === 'SEMANAL' && !a.flexible) return 0
+  return DEFAULT_LEAD[a.frequency]
+}
+
+/** ¿Está hoy dentro de la ventana activa de una actividad con ventana (ej. del 7 al 10)? */
+export function isInActiveWindow(e: Pick<Execution, 'windowStart' | 'dueDate'>, today: ISODate, a?: Pick<Activity, 'flexible' | 'windowStartDay' | 'windowEndDay'>): boolean {
+  if (!e.windowStart) return false
+  // Las semanales flexibles usan windowStart=lunes para aparecer en Semana, no como ventana fija en Hoy
+  if (a?.flexible) return false
+  return e.windowStart <= today && today <= e.dueDate
 }
 
 /** Estado visual calculado desde la fecha real de la ejecución. */
-export function visualState(e: Pick<Execution, 'status' | 'dueDate'>, today: ISODate, lead = 3): Visual {
+export function visualState(
+  e: Pick<Execution, 'status' | 'dueDate' | 'windowStart'>,
+  today: ISODate,
+  lead = 2,
+  a?: Pick<Activity, 'flexible' | 'windowStartDay' | 'windowEndDay'>
+): Visual {
   if (e.status === 'REALIZADA') return 'done'
   if (e.status === 'NO_REALIZADA') return 'notdone'
   if (e.dueDate < today) return 'overdue'
   if (e.status === 'EN_CURSO') return 'progress'
+  if (isInActiveWindow(e, today, a)) return 'soon'
   if (diffDays(e.dueDate, today) <= lead) return 'soon'
   return 'pending'
 }
@@ -49,9 +67,15 @@ export function buildExecutions(
   nowIso = new Date().toISOString()
 ): Execution[] {
   const byId = new Map<string, Execution>()
-  const known = new Set(activities.map(a => a.id))
+  const actById = new Map(activities.map(a => [a.id, a]))
   for (const e of persisted) {
-    if (e.dueDate >= from && e.dueDate <= to && known.has(e.activityId)) byId.set(e.id, e)
+    const act = actById.get(e.activityId)
+    if (!act) continue
+    const winStart = e.windowStart || computeWindowStart(act, e.dueDate)
+    const overlapsWindow = winStart !== undefined && winStart <= to && e.dueDate >= from
+    if ((e.dueDate >= from && e.dueDate <= to) || overlapsWindow) {
+      byId.set(e.id, winStart ? { ...e, windowStart: winStart } : e)
+    }
   }
   const allPersistedIds = new Set(persisted.map(e => e.id))
   for (const a of activities) {
@@ -66,7 +90,11 @@ export function buildExecutions(
 }
 
 export function compareExecutions(a: Execution, b: Execution) {
-  return a.dueDate.localeCompare(b.dueDate) || (a.activityName || '').localeCompare(b.activityName || '') || a.branch.localeCompare(b.branch)
+  return (
+    a.dueDate.localeCompare(b.dueDate) ||
+    (a.activityName || '').localeCompare(b.activityName || '') ||
+    a.branch.localeCompare(b.branch)
+  )
 }
 
 /**
@@ -78,7 +106,7 @@ export function pendingMaterialization(
   persisted: Execution[],
   events: PlannerEvent[],
   today: ISODate,
-  lookbackDays = 400,
+  lookbackDays = 60,
   nowIso = new Date().toISOString()
 ): Execution[] {
   const ids = new Set(persisted.map(e => e.id))
@@ -86,7 +114,9 @@ export function pendingMaterialization(
   const out: Execution[] = []
   for (const a of activities) {
     if (a.state !== 'ACTIVA') continue
-    for (const o of occurrences(a, from, today, events)) {
+    // Para diarias solo materializamos desde los últimos 14 días para evitar acumulaciones masivas
+    const actFrom = a.frequency === 'DIARIA' ? addDays(today, -14) : from
+    for (const o of occurrences(a, actFrom, today, events)) {
       const v = virtualExecution(a, o, nowIso)
       if (!ids.has(v.id)) {
         ids.add(v.id)
@@ -101,7 +131,10 @@ export function pendingMaterialization(
 export function isUntouched(e: Execution, a?: Activity) {
   return (
     e.status === 'PENDIENTE' &&
-    !e.note && !e.evidence && !e.reason && !e.completedAt &&
+    !e.note &&
+    !e.evidence &&
+    !e.reason &&
+    !e.completedAt &&
     (!a || e.executor === a.responsible)
   )
 }
@@ -110,9 +143,7 @@ export type RuleReconcile = { update: { id: string; dueDate: string }[]; remove:
 
 /**
  * Tras cambiar la regla de una actividad: ajusta ejecuciones futuras pendientes.
- * - Si la nueva regla produce el mismo período → se actualiza la fecha.
- * - Si no y no tiene datos cargados → se elimina (era una previsión de la regla anterior).
- * - El historial (fechas pasadas o ejecuciones con datos) nunca se toca.
+ * El historial (fechas pasadas o ejecuciones con datos) nunca se toca.
  */
 export function reconcileAfterRuleChange(
   next: Activity,
@@ -120,7 +151,9 @@ export function reconcileAfterRuleChange(
   events: PlannerEvent[],
   today: ISODate
 ): RuleReconcile {
-  const mine = persisted.filter(e => e.activityId === next.id && e.dueDate >= today && e.status === 'PENDIENTE')
+  const mine = persisted.filter(
+    e => e.activityId === next.id && e.dueDate >= today && e.status === 'PENDIENTE'
+  )
   if (!mine.length) return { update: [], remove: [] }
   const horizon = addDays(mine.map(e => e.dueDate).sort().at(-1)!, 400)
   const fresh = new Map<string, string>()
@@ -145,7 +178,20 @@ export function reconcileAfterRuleChange(
 
 /** ¿Cambió algo que afecte las fechas generadas? */
 export function ruleChanged(a: Activity, b: Activity) {
-  const keys: (keyof Activity)[] = ['frequency', 'interval', 'startDate', 'endDate', 'businessDaysOnly', 'branch', 'splitBranches', 'eventType', 'offsetDays']
+  const keys: (keyof Activity)[] = [
+    'frequency',
+    'interval',
+    'startDate',
+    'endDate',
+    'businessDaysOnly',
+    'flexible',
+    'windowStartDay',
+    'windowEndDay',
+    'branch',
+    'splitBranches',
+    'eventType',
+    'offsetDays'
+  ]
   return keys.some(k => (a[k] ?? '') !== (b[k] ?? ''))
 }
 
@@ -159,12 +205,17 @@ export type ExecFilter = {
   query?: string
 }
 
-export function matchesFilter(e: Execution, f: ExecFilter, activity: Activity | undefined, today: ISODate) {
+export function matchesFilter(
+  e: Execution,
+  f: ExecFilter,
+  activity: Activity | undefined,
+  today: ISODate
+) {
   if (f.person && f.person !== 'TODOS' && e.executor !== f.person) return false
   if (f.branch && f.branch !== 'TODAS' && e.branch !== f.branch && e.branch !== 'AMBAS') return false
   if (f.frequency && f.frequency !== 'TODAS' && activity?.frequency !== f.frequency) return false
   if (f.visual && f.visual !== 'previstas') {
-    const v = visualState(e, today, leadDaysFor(activity))
+    const v = visualState(e, today, leadDaysFor(activity), activity)
     if (f.visual === 'pendientes') {
       if (!(v === 'pending' || v === 'soon' || v === 'progress')) return false
     } else if (f.visual === 'pending') {
@@ -173,7 +224,9 @@ export function matchesFilter(e: Execution, f: ExecFilter, activity: Activity | 
   }
   if (f.query) {
     const q = f.query.toLowerCase()
-    const hay = `${activity?.name || e.activityName || ''} ${activity?.description || ''} ${e.note || ''}`.toLowerCase()
+    const hay = `${activity?.name || e.activityName || ''} ${activity?.description || ''} ${
+      e.note || ''
+    }`.toLowerCase()
     if (!hay.includes(q)) return false
   }
   return true
@@ -201,7 +254,10 @@ export function summarize(list: Execution[], today: ISODate): Summary {
 }
 
 /** Cambios para completar una ejecución: guarda fecha y ejecutor automáticamente. */
-export function completionPatch(user: Role | undefined, nowIso = new Date().toISOString()): Partial<Execution> {
+export function completionPatch(
+  user: Role | undefined,
+  nowIso = new Date().toISOString()
+): Partial<Execution> {
   return {
     status: 'REALIZADA',
     completedAt: nowIso,
@@ -209,9 +265,200 @@ export function completionPatch(user: Role | undefined, nowIso = new Date().toIS
   }
 }
 
-export function statusPatch(status: ExecStatus, user: Role | undefined, nowIso = new Date().toISOString()): Partial<Execution> {
+export function statusPatch(
+  status: ExecStatus,
+  user: Role | undefined,
+  nowIso = new Date().toISOString()
+): Partial<Execution> {
   if (status === 'REALIZADA') return completionPatch(user, nowIso)
-  if (status === 'NO_REALIZADA') return { status, completedAt: nowIso, ...(user ? { completedBy: user } : {}) }
+  if (status === 'NO_REALIZADA') {
+    return { status, completedAt: nowIso, ...(user ? { completedBy: user } : {}) }
+  }
   return { status, completedAt: '', completedBy: undefined }
 }
 
+// ============================================================
+// VISTAS DE AGENDA: HOY y SEMANA
+// ============================================================
+
+export type DailyBacklogGroup = {
+  activityId: string
+  activityName: string
+  branch: BranchScope
+  items: Execution[]
+}
+
+export type TodayViewModel = {
+  /** Tareas que corresponden realizar hoy (diarias de hoy, semanales de hoy, o dentro de su ventana activa). */
+  todayTasks: Execution[]
+  /** Vencidas no diarias (o diarias únicas) que siguen pendientes. */
+  overdueTasks: Execution[]
+  /** Acumulaciones de actividades diarias vencidas agrupadas de forma compacta. */
+  dailyBacklog: DailyBacklogGroup[]
+  /** Actividades flexibles próximas a vencer (apartado secundario). */
+  flexibleSoon: Execution[]
+  /** Actividades ya completadas de hoy / ventana actual (mostradas compactas). */
+  completedToday: Execution[]
+}
+
+/**
+ * Construye el modelo exacto para la vista HOY:
+ * - Diarias de hoy, semanales fijas de hoy, eventos de hoy y mensuales/otras cuya fecha es hoy o están dentro de su ventana activa (ej. del 7 al 10).
+ * - Las semanales flexibles no saturan Hoy al inicio de la semana: aparecen en `flexibleSoon` cuando se acerca su vencimiento (o en `todayTasks` el día que vencen).
+ * - Al completarse una tarea en ventana (ej. el día 7 de una ventana 7–10), desaparece de las pendientes y pasa a `completedToday`.
+ * - Evita acumulaciones interminables de diarias vencidas agrupándolas en `dailyBacklog`.
+ */
+export function buildTodayView(
+  activities: Activity[],
+  persisted: Execution[],
+  events: PlannerEvent[],
+  today: ISODate,
+  filter: ExecFilter = {}
+): TodayViewModel {
+  const actMap = new Map(activities.map(a => [a.id, a]))
+  const from = addDays(today, -60)
+  const to = addDays(today, 21)
+  const all = buildExecutions(activities, persisted, events, from, to).filter(e =>
+    matchesFilter(e, filter, actMap.get(e.activityId), today)
+  )
+
+  const todayTasks: Execution[] = []
+  const overdueRegular: Execution[] = []
+  const overdueDailiesByKey = new Map<string, Execution[]>()
+  const flexibleSoon: Execution[] = []
+  const completedToday: Execution[] = []
+
+  for (const e of all) {
+    const act = actMap.get(e.activityId)
+    const inWin = isInActiveWindow(e, today, act)
+    const isTodayDue = e.dueDate === today
+
+    if (isResolved(e.status)) {
+      const completedDate = e.completedAt ? e.completedAt.slice(0, 10) : ''
+      if (isTodayDue || inWin || completedDate === today) {
+        completedToday.push(e)
+      }
+      continue
+    }
+
+    // Pendiente o En curso
+    if (e.dueDate < today) {
+      if (act?.frequency === 'DIARIA') {
+        const key = `${e.activityId}__${e.branch}`
+        const arr = overdueDailiesByKey.get(key) || []
+        arr.push(e)
+        overdueDailiesByKey.set(key, arr)
+      } else {
+        overdueRegular.push(e)
+      }
+      continue
+    }
+
+    if (isTodayDue || inWin) {
+      todayTasks.push(e)
+      continue
+    }
+
+    // Futuras (> today): evaluar si son flexibles próximas a vencer
+    const lead = leadDaysFor(act)
+    const daysLeft = diffDays(e.dueDate, today)
+    if (lead > 0 && daysLeft > 0 && daysLeft <= lead) {
+      flexibleSoon.push(e)
+    }
+  }
+
+  // Si una diaria tiene 1 sola vencida (ej. ayer), se muestra normal; si tiene >= 2 se compacta en dailyBacklog
+  const dailyBacklog: DailyBacklogGroup[] = []
+  for (const [, list] of overdueDailiesByKey.entries()) {
+    if (list.length === 1) {
+      overdueRegular.push(list[0])
+    } else if (list.length > 1) {
+      const first = list[0]
+      const act = actMap.get(first.activityId)
+      dailyBacklog.push({
+        activityId: first.activityId,
+        activityName: act?.name || first.activityName || 'Actividad diaria',
+        branch: first.branch,
+        items: list.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+      })
+    }
+  }
+
+  return {
+    todayTasks,
+    overdueTasks: overdueRegular,
+    dailyBacklog,
+    flexibleSoon,
+    completedToday
+  }
+}
+
+export type WeekDayColumn = {
+  date: ISODate
+  isBusinessDay: boolean
+  isToday: boolean
+  items: Execution[]
+}
+
+export type WeekViewModel = {
+  weekStart: ISODate
+  weekEnd: ISODate
+  days: WeekDayColumn[]
+  /** Apartado discreto "Flexibles de la semana" (semanales flexibles y mensuales en ventana durante esta semana). */
+  flexibleWeek: Execution[]
+}
+
+export function buildWeekView(
+  activities: Activity[],
+  persisted: Execution[],
+  events: PlannerEvent[],
+  referenceDate: ISODate,
+  today: ISODate,
+  filter: ExecFilter = {}
+): WeekViewModel {
+  const weekStart = startOfWeek(referenceDate)
+  const weekEnd = addDays(weekStart, 6)
+  const actMap = new Map(activities.map(a => [a.id, a]))
+
+  const all = buildExecutions(activities, persisted, events, weekStart, weekEnd).filter(e =>
+    matchesFilter(e, filter, actMap.get(e.activityId), today)
+  )
+
+  const flexibleWeek: Execution[] = []
+  const byDay = new Map<ISODate, Execution[]>()
+  for (let i = 0; i < 7; i++) {
+    byDay.set(addDays(weekStart, i), [])
+  }
+
+  for (const e of all) {
+    const act = actMap.get(e.activityId)
+    const isFlexibleWeekly = act?.frequency === 'SEMANAL' && Boolean(act.flexible)
+    const hasMonthWindow = Boolean(
+      act?.windowStartDay && act?.windowEndDay && act.windowEndDay > act.windowStartDay
+    )
+
+    if (isFlexibleWeekly || hasMonthWindow) {
+      flexibleWeek.push(e)
+    } else if (byDay.has(e.dueDate)) {
+      byDay.get(e.dueDate)!.push(e)
+    }
+  }
+
+  const days: WeekDayColumn[] = []
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(weekStart, i)
+    days.push({
+      date: d,
+      isBusinessDay: !isWeekend(d),
+      isToday: d === today,
+      items: byDay.get(d) || []
+    })
+  }
+
+  return {
+    weekStart,
+    weekEnd,
+    days,
+    flexibleWeek
+  }
+}

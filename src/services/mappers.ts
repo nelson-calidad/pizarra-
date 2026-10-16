@@ -24,7 +24,6 @@ export const normalizeDate = (d?: unknown): string | undefined => {
   if (!t) return undefined
   if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t
   if (/^\d{4}-\d{2}-\d{2}T/.test(t)) {
-    // Fecha serializada por Sheets (medianoche local convertida a UTC): usar la fecha local.
     const dt = new Date(t)
     if (!isNaN(dt.getTime())) {
       const p = (n: number) => String(n).padStart(2, '0')
@@ -115,6 +114,7 @@ export const fromSheetChecklist = (n: Record<string, unknown>): ChecklistItem =>
 const ACTIVITY_MAP: Record<string, string> = {
   id: 'ID', name: 'NOMBRE', description: 'DESCRIPCION', frequency: 'FRECUENCIA', interval: 'INTERVALO',
   startDate: 'FECHA_INICIO', endDate: 'FECHA_FIN', effectiveFrom: 'VIGENTE_DESDE', businessDaysOnly: 'SOLO_HABILES',
+  flexible: 'FLEXIBLE', windowStartDay: 'DIA_INICIO_VENTANA', windowEndDay: 'DIA_FIN_VENTANA',
   branch: 'SUCURSAL', splitBranches: 'POR_SUCURSAL', responsible: 'RESPONSABLE', category: 'CATEGORIA',
   eventType: 'TIPO_EVENTO', offsetDays: 'DESPLAZAMIENTO_DIAS', leadDays: 'AVISO_DIAS', state: 'ESTADO',
   sourceNoteId: 'NOTA_ORIGEN_ID', createdBy: 'CREADO_POR', createdAt: 'CREADO_EN', updatedAt: 'ACTUALIZADO_EN'
@@ -132,6 +132,9 @@ export const activityFromSheet = (r: Record<string, unknown>): Activity => ({
   endDate: normalizeDate(str(r.FECHA_FIN)),
   effectiveFrom: normalizeDate(str(r.VIGENTE_DESDE)),
   businessDaysOnly: bool(r.SOLO_HABILES),
+  flexible: r.FLEXIBLE === undefined || r.FLEXIBLE === '' ? undefined : bool(r.FLEXIBLE),
+  windowStartDay: num(r.DIA_INICIO_VENTANA),
+  windowEndDay: num(r.DIA_FIN_VENTANA),
   branch: (str(r.SUCURSAL) || 'AMBAS') as Activity['branch'],
   splitBranches: bool(r.POR_SUCURSAL, true),
   responsible: (str(r.RESPONSABLE) || 'ANALISTA') as Activity['responsible'],
@@ -150,9 +153,9 @@ export const activityFromSheet = (r: Record<string, unknown>): Activity => ({
 
 const EXEC_MAP: Record<string, string> = {
   id: 'ID', activityId: 'ACTIVIDAD_ID', period: 'PERIODO', branch: 'SUCURSAL', dueDate: 'FECHA',
-  executor: 'EJECUTOR', status: 'ESTADO', note: 'OBSERVACION', evidence: 'EVIDENCIA', reason: 'MOTIVO',
-  completedAt: 'COMPLETADO_EN', completedBy: 'COMPLETADO_POR', eventId: 'EVENTO_ID',
-  activityName: 'NOMBRE_ACTIVIDAD', createdAt: 'CREADO_EN', updatedAt: 'ACTUALIZADO_EN'
+  windowStart: 'INICIO_VENTANA', executor: 'EJECUTOR', status: 'ESTADO', note: 'OBSERVACION',
+  evidence: 'EVIDENCIA', reason: 'MOTIVO', completedAt: 'COMPLETADO_EN', completedBy: 'COMPLETADO_POR',
+  eventId: 'EVENTO_ID', activityName: 'NOMBRE_ACTIVIDAD', createdAt: 'CREADO_EN', updatedAt: 'ACTUALIZADO_EN'
 }
 
 export const executionToSheet = (e: Partial<Execution>) => mapKeys(EXEC_MAP, e as Record<string, unknown>)
@@ -163,6 +166,7 @@ export const executionFromSheet = (r: Record<string, unknown>): Execution => ({
   period: str(r.PERIODO),
   branch: (str(r.SUCURSAL) || 'AMBAS') as Execution['branch'],
   dueDate: normalizeDate(str(r.FECHA)) || '',
+  windowStart: normalizeDate(str(r.INICIO_VENTANA)),
   executor: (str(r.EJECUTOR) || 'ANALISTA') as Execution['executor'],
   status: (str(r.ESTADO) || 'PENDIENTE') as Execution['status'],
   note: optStr(r.OBSERVACION),
@@ -197,4 +201,3 @@ export const eventFromSheet = (r: Record<string, unknown>): PlannerEvent => ({
   createdAt: str(r.CREADO_EN) || new Date().toISOString(),
   updatedAt: optStr(r.ACTUALIZADO_EN)
 })
-

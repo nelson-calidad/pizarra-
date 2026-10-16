@@ -4,10 +4,21 @@ import type { Visual } from './planner'
 
 export const ROLES: Role[] = ['RAC', 'ANALISTA']
 export const ROLE_LABEL: Record<Role, string> = { RAC: 'RAC', ANALISTA: 'Analista' }
-export const ROLE_LONG: Record<Role, string> = { RAC: 'Responsable de Calidad', ANALISTA: 'Analista de Calidad' }
+export const ROLE_LONG: Record<Role, string> = {
+  RAC: 'Responsable de Calidad',
+  ANALISTA: 'Analista de Calidad'
+}
 
-export const BRANCH_LABEL: Record<BranchScope, string> = { JUJUY: 'Jujuy', SALTA: 'Salta', AMBAS: 'Jujuy y Salta' }
-export const BRANCH_SHORT: Record<BranchScope, string> = { JUJUY: 'JUJ', SALTA: 'SAL', AMBAS: 'J+S' }
+export const BRANCH_LABEL: Record<BranchScope, string> = {
+  JUJUY: 'Jujuy',
+  SALTA: 'Salta',
+  AMBAS: 'Jujuy y Salta'
+}
+export const BRANCH_SHORT: Record<BranchScope, string> = {
+  JUJUY: 'JUJ',
+  SALTA: 'SAL',
+  AMBAS: 'J+S'
+}
 
 export const FREQ_LABEL: Record<Frequency, string> = {
   UNICA: 'Única',
@@ -19,7 +30,14 @@ export const FREQ_LABEL: Record<Frequency, string> = {
   ANUAL: 'Anual',
   EVENTO: 'Por evento'
 }
-export const RECURRING: Frequency[] = ['DIARIA', 'SEMANAL', 'MENSUAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL']
+export const RECURRING: Frequency[] = [
+  'DIARIA',
+  'SEMANAL',
+  'MENSUAL',
+  'TRIMESTRAL',
+  'SEMESTRAL',
+  'ANUAL'
+]
 
 export const STATUS_LABEL: Record<ExecStatus, string> = {
   PENDIENTE: 'Pendiente',
@@ -42,13 +60,21 @@ export const EVENT_TYPES: { key: string; label: string }[] = [
   { key: 'CIERRE_INDICADORES', label: 'Cierre oficial de indicadores' },
   { key: 'AUDITORIA_ISO', label: 'Auditoría ISO 9001' },
   { key: 'TEST_TALLER', label: 'Test de taller' },
+  { key: 'VISITA_SALTA', label: 'Visita a Salta' },
+  { key: 'INDUCCION_CALIDAD', label: 'Inducción de Calidad' },
   { key: 'AUDITORIA_INTERNA', label: 'Auditoría / control interno' },
-  { key: 'MYSTERY_SHOPPER', label: 'Mystery Shopper' },
   { key: 'OTRO', label: 'Otro evento' }
 ]
 export const eventTypeLabel = (k?: string) => EVENT_TYPES.find(e => e.key === k)?.label || k || 'Evento'
 
-export const CATEGORIES = ['Indicadores', 'Auditorías', 'Controles', 'Comunicaciones', 'Documentación', 'General']
+export const CATEGORIES = [
+  'Indicadores',
+  'Auditorías',
+  'Controles',
+  'Ambiente y Procesos',
+  'Comunicaciones',
+  'General'
+]
 
 const UNIT: Record<string, [string, string]> = {
   DIARIA: ['día', 'días'],
@@ -59,8 +85,21 @@ const UNIT: Record<string, [string, string]> = {
   ANUAL: ['año', 'años']
 }
 
-/** Descripción legible de la regla: "Mensual · día 5", "Semanal · lunes", "PCGC · 7 días antes". */
-export function describeRule(a: Pick<Activity, 'frequency' | 'interval' | 'startDate' | 'businessDaysOnly' | 'eventType' | 'offsetDays'>): string {
+/** Descripción legible de la regla: "Mensual · del 7 al 10", "Semanal flexible · vence viernes", etc. */
+export function describeRule(
+  a: Pick<
+    Activity,
+    | 'frequency'
+    | 'interval'
+    | 'startDate'
+    | 'businessDaysOnly'
+    | 'flexible'
+    | 'windowStartDay'
+    | 'windowEndDay'
+    | 'eventType'
+    | 'offsetDays'
+  >
+): string {
   const n = Math.max(1, Number(a.interval) || 1)
   const every = (f: Frequency) => (n > 1 ? `Cada ${n} ${UNIT[f][1]}` : FREQ_LABEL[f])
   const valid = isValidISO(a.startDate)
@@ -68,21 +107,32 @@ export function describeRule(a: Pick<Activity, 'frequency' | 'interval' | 'start
     case 'UNICA':
       return valid ? `Única · ${shortDate(a.startDate)}` : 'Única'
     case 'DIARIA':
-      return `${every('DIARIA')}${a.businessDaysOnly ? ' · días hábiles' : ''}`
-    case 'SEMANAL':
-      return valid ? `${every('SEMANAL')} · ${weekdayNameByIndex(weekday(a.startDate))}` : every('SEMANAL')
+      return `${every('DIARIA')}${a.businessDaysOnly ? ' · lun a vie' : ''}`
+    case 'SEMANAL': {
+      if (!valid) return every('SEMANAL')
+      const dayName = weekdayNameByIndex(weekday(a.startDate))
+      return a.flexible
+        ? `${every('SEMANAL')} flexible · vence ${dayName}`
+        : `${every('SEMANAL')} · ${dayName}`
+    }
     case 'MENSUAL':
     case 'TRIMESTRAL':
     case 'SEMESTRAL':
     case 'ANUAL': {
+      if (a.windowStartDay && a.windowEndDay && a.windowEndDay >= a.windowStartDay) {
+        return `${every(a.frequency)} · del ${a.windowStartDay} al ${a.windowEndDay}`
+      }
       if (!valid) return every(a.frequency)
       const { d } = parseISO(a.startDate)
       const day = d >= 29 ? `día ${d} (o último)` : `día ${d}`
-      return a.frequency === 'ANUAL' ? `${every('ANUAL')} · ${shortDate(a.startDate)}` : `${every(a.frequency)} · ${day}`
+      return a.frequency === 'ANUAL'
+        ? `${every('ANUAL')} · ${shortDate(a.startDate)}`
+        : `${every(a.frequency)} · ${day}`
     }
     case 'EVENTO': {
       const off = Math.round(Number(a.offsetDays) || 0)
-      const rel = off === 0 ? 'el mismo día' : off < 0 ? `${-off} días antes` : `${off} días después`
+      const rel =
+        off === 0 ? 'el mismo día' : off < 0 ? `${-off} días antes` : `${off} días después`
       return `${eventTypeLabel(a.eventType)} · ${rel}`
     }
   }
@@ -100,4 +150,3 @@ export function periodLabel(period: string, freq?: Frequency): string {
   if (freq === 'DIARIA') return shortDate(period)
   return period
 }
-

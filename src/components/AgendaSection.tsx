@@ -259,7 +259,17 @@ export function AgendaSection({
             </button>
           </div>
 
-          {/* Acceso discreto a Eventos y Catálogo de reglas */}
+          {/* Acceso discreto a Eventos, Catálogo e Importación */}
+          <button
+            type="button"
+            className="btn-discreet"
+            onClick={() => setImportOpen(true)}
+            title="Importar catálogo de actividades desde archivo JSON"
+          >
+            <Upload size={14} />
+            <span>Importar</span>
+          </button>
+
           <button
             type="button"
             className="btn-discreet"

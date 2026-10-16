@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import {
-  Upload, X, CheckSquare, AlertTriangle, Check, FileText, ShieldAlert,
-  Building, User
+  Upload, X, CheckSquare, AlertTriangle,
+  Building, User, Check, ShieldAlert, FileText
 } from 'lucide-react'
 import type { Activity, Role } from '../types'
 import {
@@ -377,4 +377,3 @@ export function ImportModal({
     </div>
   )
 }
-

@@ -8,6 +8,8 @@ export type RawImportItem = {
   name?: string
   frecuencia?: string
   frequency?: string
+  intervalo?: number
+  interval?: number
   sucursal?: string
   branch?: string
   responsable?: string
@@ -17,9 +19,14 @@ export type RawImportItem = {
   separar_sucursales?: boolean
   splitBranches?: boolean
   dia_semana?: string | number
+  diaSemana?: string | number
   dia?: number
+  fecha_inicio?: string
+  startDate?: string
   ventana_inicio?: number
+  windowStartDay?: number
   ventana_fin?: number
+  windowEndDay?: number
   tipo_evento?: string
   eventType?: string
   desfase_dias?: number
@@ -77,10 +84,13 @@ function normalizeFrequency(freqStr?: string): Frequency {
 }
 
 /**
- * Normaliza sucursal
+ * Normaliza sucursal y comportamiento independiente
  */
-function normalizeBranch(bStr?: string): { branch: BranchScope; splitBranches: boolean } {
-  if (!bStr) return { branch: 'AMBAS', splitBranches: true }
+function normalizeBranch(
+  bStr?: string,
+  explicitSplit?: boolean
+): { branch: BranchScope; splitBranches: boolean } {
+  if (!bStr) return { branch: 'AMBAS', splitBranches: explicitSplit !== undefined ? explicitSplit : true }
   const b = bStr.toUpperCase().trim()
   if (b.includes('JUJUY') && !b.includes('SALTA') && !b.includes('AMBAS')) {
     return { branch: 'JUJUY', splitBranches: false }
@@ -88,13 +98,15 @@ function normalizeBranch(bStr?: string): { branch: BranchScope; splitBranches: b
   if (b.includes('SALTA') && !b.includes('JUJUY') && !b.includes('AMBAS')) {
     return { branch: 'SALTA', splitBranches: false }
   }
-  // Si dice 'AMBAS' pero no separado
+  if (explicitSplit !== undefined) {
+    return { branch: 'AMBAS', splitBranches: explicitSplit }
+  }
   const isSeparated = b.includes('SEPARADO') || b.includes('INDEPENDIENTE') || b.includes('(SEPARADO)')
   return { branch: 'AMBAS', splitBranches: isSeparated }
 }
 
 /**
- * Obtiene el próximo día ISO para un día de la semana (1 = lunes, 2 = martes, etc.)
+ * Obtiene el próximo día ISO para un día de la semana (1 = lunes, 2 = martes, ..., 7 = domingo)
  */
 function getNextWeekdayDate(targetDayNum: number, fromDate: string): string {
   const [y, m, d] = fromDate.split('-').map(Number)
@@ -104,6 +116,24 @@ function getNextWeekdayDate(targetDayNum: number, fromDate: string): string {
   if (diff < 0) diff += 7
   dt.setUTCDate(dt.getUTCDate() + diff)
   return dt.toISOString().slice(0, 10)
+}
+
+/**
+ * Convierte un nombre de día de la semana a su índice (1..7)
+ */
+function weekdayNameToIndex(dayName: string | number): number | null {
+  if (typeof dayName === 'number') {
+    return dayName >= 1 && dayName <= 7 ? dayName : null
+  }
+  const d = String(dayName).toLowerCase().trim()
+  if (d.includes('lun')) return 1
+  if (d.includes('mar')) return 2
+  if (d.includes('mié') || d.includes('mie')) return 3
+  if (d.includes('jue')) return 4
+  if (d.includes('vie')) return 5
+  if (d.includes('sáb') || d.includes('sab')) return 6
+  if (d.includes('dom')) return 7
+  return null
 }
 
 /**
@@ -129,8 +159,7 @@ export function parseImportDraft(content: string, effectiveStartDate = todayISO(
     // Si no es JSON estándar, dejamos rawItems vacío y probamos parser de texto
   }
 
-  // Si no se obtuvo de JSON, parseamos el formato de texto borrador:
-  // "D01 — Revisar nuevas encuestas... — AMBAS (separado) [REVISAR: ...]"
+  // Si no se obtuvo de JSON, parseamos el formato de texto borrador
   if (rawItems.length === 0) {
     rawItems = parseTextDraft(content)
   }
@@ -147,14 +176,12 @@ function parseTextDraft(text: string): RawImportItem[] {
   let currentSectionFreq: string | null = null
 
   for (const line of lines) {
-    // Detectar encabezados de sección ej: "DIARIA (4)", "SEMANAL (12)"
     const headMatch = line.match(/^(DIARIA|SEMANAL|MENSUAL|TRIMESTRAL|SEMESTRAL|ANUAL|EVENTO|UNICA)\s*(\(\d+\))?$/i)
     if (headMatch) {
       currentSectionFreq = headMatch[1].toUpperCase()
       continue
     }
 
-    // Detectar línea de actividad ej: "D01 — Revisar nuevas encuestas... — AMBAS (separado) [REVISAR: VALIDAR_FRECUENCIA]"
     const itemMatch = line.match(/^([DSMAEPU]\d{1,3})\s*[-—–]\s*(.*?)(?:\s*[-—–]\s*([A-ZÁÉÍÓÚ\s(),]+))?(?:\s*\[REVISAR:\s*([^\]]+)\])?$/i)
     if (itemMatch) {
       const code = itemMatch[1].toUpperCase()
@@ -187,24 +214,24 @@ function parseTextDraft(text: string): RawImportItem[] {
 }
 
 /**
- * Adapta un ítem en crudo al modelo estandarizado con las reglas de negocio
+ * Adapta un ítem en crudo al modelo estandarizado respetando PRIORITARIAMENTE
+ * los campos explícitos del JSON/archivo (frecuencia, intervalo, sucursal, etc.)
  */
 function adaptToParsedItem(raw: RawImportItem, index: number, effectiveStartDate: string): ParsedImportItem {
   const code = (raw.codigo || raw.id || `IMP-${index + 1}`).trim().toUpperCase()
   const name = (raw.nombre || raw.name || `Actividad ${code}`).trim()
-  const freq = normalizeFrequency(raw.frecuencia || raw.frequency || (code.startsWith('D') ? 'DIARIA' : code.startsWith('S') ? 'SEMANAL' : code.startsWith('M') ? 'MENSUAL' : code.startsWith('E') ? 'EVENTO' : 'UNICA'))
-  const branchInfo = normalizeBranch(raw.sucursal || raw.branch)
+  const freq = normalizeFrequency(raw.frecuencia || raw.frequency)
+  const interval = raw.intervalo ?? raw.interval ?? 1
+  const branchInfo = normalizeBranch(raw.sucursal || raw.branch, raw.separar_sucursales ?? raw.splitBranches)
 
-  // Asignación de rol habitual
+  // Rol responsable explícito o inferido
   let responsible: Role = 'ANALISTA'
   const respStr = (raw.responsable || raw.responsible || '').toUpperCase()
-  if (respStr.includes('RAC') || name.toLowerCase().includes('rac y analista') || name.toLowerCase().includes('coordinar agenda') || code === 'S04') {
+  if (respStr.includes('RAC')) {
     responsible = 'RAC'
   }
 
-  // Identificación de reglas de exclusión explícitas requeridas:
-  // 16. Mystery Shopper: está suspendido.
-  // 17. Controles semanales de órdenes de reparación: se hacen a demanda.
+  // Identificación de exclusiones requeridas
   let isExcluded = false
   let exclusionReason: string | undefined
 
@@ -212,108 +239,87 @@ function adaptToParsedItem(raw: RawImportItem, index: number, effectiveStartDate
   if (nameLower.includes('mystery') || nameLower.includes('shopper')) {
     isExcluded = true
     exclusionReason = 'Suspendido según directiva de Calidad'
-  } else if ((code === 'U01' || nameLower.includes('órdenes de reparación') || nameLower.includes('ordenes de reparacion')) && freq === 'SEMANAL') {
+  } else if ((nameLower.includes('órdenes de reparación') || nameLower.includes('ordenes de reparacion')) && freq === 'SEMANAL') {
     isExcluded = true
-    exclusionReason = 'Control de órdenes se realiza exclusivamente a demanda, no semanal'
+    exclusionReason = 'El control de órdenes de reparación se hace a demanda, no semanal'
   }
 
-  // Planes de acción: recordatorio de revisión
-  let finalName = name
-  if (code === 'S10' || nameLower.includes('planes de acción') || nameLower.includes('planes de accion')) {
-    if (!finalName.toLowerCase().includes('sheet')) {
-      // Dejamos en claro que es revisión del Sheet
-    }
-  }
-
-  // Verificar si tiene detalles pendientes de confirmar
+  // Detección de si faltan datos o tiene detalles pendientes de confirmación
   const reviewTag = raw.revisar || raw.review
-  const hasPendingDetails = !!(reviewTag || raw.pendiente_confirmar || nameLower.includes('validar') || code.startsWith('U'))
-  const pendingReason = reviewTag
-    ? `Detalle por confirmar: ${reviewTag}`
-    : hasPendingDetails
-    ? 'Pendiente de confirmación operativa'
-    : undefined
+  let hasPendingDetails = !!(reviewTag || raw.pendiente_confirmar)
+  let pendingReason = reviewTag ? `Pendiente: ${reviewTag}` : undefined
 
-  // Estado: las actividades pendientes de confirmación DEBEN quedar en borrador o pausadas (Requisito 8)
-  const state: 'ACTIVA' | 'PAUSADA' = hasPendingDetails || isExcluded ? 'PAUSADA' : 'ACTIVA'
+  // Ventana mensual explícita
+  let windowStartDay = raw.ventana_inicio ?? raw.windowStartDay
+  let windowEndDay = raw.ventana_fin ?? raw.windowEndDay
 
-  // Reglas de días y fechas conocidas
-  let startDate = effectiveStartDate
-  let flexible = false
-  let windowStartDay: number | undefined
-  let windowEndDay: number | undefined
-  let eventType: string | undefined
-  let offsetDays: number | undefined
+  // Evento explícito
+  let eventType = raw.tipo_evento ?? raw.eventType
+  let offsetDays = raw.desfase_dias ?? raw.offsetDays
 
-  // Caso: Viaje a Salta (S06) -> martes
-  if (code === 'S06' || nameLower.includes('viajar a salta')) {
-    startDate = getNextWeekdayDate(2, effectiveStartDate) // Martes
-  } else if (code === 'S07' || nameLower.includes('recorrida semanal de taller salta')) {
-    startDate = getNextWeekdayDate(2, effectiveStartDate) // Martes (aprovecha viaje)
-  } else if (code === 'S09' || nameLower.includes('devoluciones de recorridas')) {
-    startDate = getNextWeekdayDate(5, effectiveStartDate) // Viernes
-  } else if (code === 'S11' || code === 'S12' || (freq === 'SEMANAL' && hasPendingDetails)) {
-    // Semanales de avance/flexibles
-    flexible = true
-    startDate = getNextWeekdayDate(5, effectiveStartDate) // Vence viernes
+  // Flexibilidad semanal explícita
+  let flexible = raw.flexible ?? false
+
+  // Cálculo de fecha de inicio (startDate)
+  let startDate = raw.fecha_inicio || raw.startDate || effectiveStartDate
+
+  if (freq === 'SEMANAL') {
+    const rawDay = raw.dia_semana ?? raw.diaSemana
+    if (rawDay !== undefined && rawDay !== null && rawDay !== '') {
+      const dayIdx = weekdayNameToIndex(rawDay)
+      if (dayIdx) {
+        startDate = getNextWeekdayDate(dayIdx, effectiveStartDate)
+      }
+    } else if (!flexible && !hasPendingDetails) {
+      // Semanal sin día especificado y no flexible -> falta confirmar día
+      hasPendingDetails = true
+      pendingReason = pendingReason || 'Día de la semana sin confirmar'
+    }
   } else if (freq === 'MENSUAL') {
-    // Si tiene ventana definida en borrador
-    if (raw.ventana_inicio && raw.ventana_fin) {
-      windowStartDay = raw.ventana_inicio
-      windowEndDay = raw.ventana_fin
-    } else if (code === 'M01' || nameLower.includes('patentamientos')) {
-      windowStartDay = 1
-      windowEndDay = 5
-    } else if (code === 'M02' || nameLower.includes('informe cem')) {
-      windowStartDay = 7
-      windowEndDay = 10
-    } else if (code === 'M03' || nameLower.includes('declaración mínima') || nameLower.includes('85 %')) {
-      windowStartDay = 18
-      windowEndDay = 22
+    if (!windowStartDay && !raw.dia) {
+      // Mensual sin día ni ventana definida -> falta confirmar ventana/fecha
+      hasPendingDetails = true
+      pendingReason = pendingReason || 'Ventana mensual sin confirmar'
     }
   } else if (freq === 'EVENTO') {
-    if (code.startsWith('E01') || code.startsWith('E02') || code.startsWith('E03') || code.startsWith('E04') || code.startsWith('E05')) {
-      eventType = 'PCGC'
-      if (code === 'E01') offsetDays = -15
-      else if (code === 'E02') offsetDays = -10
-      else if (code === 'E03') offsetDays = -5
-      else if (code === 'E04') offsetDays = -2
-      else if (code === 'E05') offsetDays = 2
-    } else if (code === 'E06' || code === 'E07') {
-      eventType = 'ISO'
-      if (code === 'E06') offsetDays = -10
-      else if (code === 'E07') offsetDays = 3
-    } else if (code === 'E08' || code === 'E09' || code === 'E10' || code === 'E11') {
-      eventType = 'CIERRE_INDICADORES'
-      if (code === 'E08' || code === 'E10') offsetDays = -1
-      else offsetDays = 1
-    } else if (code === 'E12') {
-      eventType = 'INDUCCION_CALIDAD'
-      offsetDays = 0
+    if (!eventType) {
+      hasPendingDetails = true
+      pendingReason = pendingReason || 'Tipo de evento disparador sin confirmar'
+    }
+  } else if (freq === 'UNICA') {
+    // Actividades únicas o a demanda deben quedar pausadas hasta programar su fecha
+    if (!raw.fecha_inicio && !raw.startDate) {
+      hasPendingDetails = true
+      pendingReason = pendingReason || (reviewTag ? `A demanda: ${reviewTag}` : 'Fecha de ejecución a definir')
     }
   }
 
-  // Categoría por código/tipo
-  let category = 'Calidad'
-  if (nameLower.includes('ambiente') || code === 'S11' || code === 'U06') category = 'Ambiente'
-  else if (nameLower.includes('proceso') || code === 'S12' || code === 'U07') category = 'Procesos'
-  else if (nameLower.includes('ipsos') || nameLower.includes('indicador') || nameLower.includes('cem')) category = 'Indicadores'
-  else if (nameLower.includes('reclamo') || nameLower.includes('hot alert')) category = 'Reclamos'
-  else if (nameLower.includes('taller') || nameLower.includes('recorrida')) category = 'Taller'
-  else if (nameLower.includes('pcgc') || nameLower.includes('iso')) category = 'Auditorías'
+  // Estado: si tiene detalles pendientes o está excluida, QUEDA PAUSADA para no generar falsos vencimientos
+  const state: 'ACTIVA' | 'PAUSADA' = hasPendingDetails || isExcluded ? 'PAUSADA' : 'ACTIVA'
+
+  // Categoría por código o texto
+  let category = raw.categoria || raw.category || 'Calidad'
+  if (category === 'Calidad') {
+    if (nameLower.includes('ambiente')) category = 'Ambiente y Procesos'
+    else if (nameLower.includes('proceso') || nameLower.includes('procedimiento')) category = 'Ambiente y Procesos'
+    else if (nameLower.includes('ipsos') || nameLower.includes('indicador') || nameLower.includes('cem')) category = 'Indicadores'
+    else if (nameLower.includes('reclamo') || nameLower.includes('hot alert')) category = 'Reclamos'
+    else if (nameLower.includes('taller') || nameLower.includes('recorrida')) category = 'Taller'
+    else if (nameLower.includes('pcgc') || nameLower.includes('iso')) category = 'Auditorías'
+  }
 
   return {
     importId: code,
-    name: finalName,
-    description: raw.descripcion || raw.description || (reviewTag ? `[Detalle pendiente: ${reviewTag}]` : undefined),
+    name,
+    description: raw.descripcion || raw.description || (pendingReason ? `[${pendingReason}]` : undefined),
     frequency: freq,
-    interval: 1,
+    interval,
     startDate,
     branch: branchInfo.branch,
     splitBranches: branchInfo.splitBranches,
     responsible,
     category,
-    businessDaysOnly: freq === 'DIARIA',
+    businessDaysOnly: raw.solo_habiles ?? raw.businessDaysOnly ?? (freq === 'DIARIA'),
     flexible,
     windowStartDay,
     windowEndDay,
@@ -329,7 +335,7 @@ function adaptToParsedItem(raw: RawImportItem, index: number, effectiveStartDate
 }
 
 /**
- * Convierte ítems parseados en actividades listas para guardar
+ * Convierte ítems parseados en actividades listas para guardar en la base de datos
  */
 export function buildActivitiesFromParsed(
   items: ParsedImportItem[],
@@ -349,7 +355,6 @@ export function buildActivitiesFromParsed(
   const now = new Date().toISOString()
 
   for (const item of items) {
-    // Si ya existe por importId o nombre, no duplicar ni sobreescribir silenciosamente
     const existsByCode = existingMap.has(item.importId.toUpperCase())
     const existsByName = existingMap.has(item.name.trim().toLowerCase())
 
@@ -386,11 +391,9 @@ export function buildActivitiesFromParsed(
     }
 
     toInsert.push(created)
-    // Registrar en el mapa temporal para evitar duplicados internos dentro del mismo lote
     existingMap.set(item.importId.toUpperCase(), created)
     existingMap.set(item.name.trim().toLowerCase(), created)
   }
 
   return { toInsert, skippedCount, duplicateIds }
 }
-

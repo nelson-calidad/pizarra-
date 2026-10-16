@@ -56,9 +56,15 @@ export const VISUAL_LABEL: Record<Visual, string> = {
 }
 
 export const EVENT_TYPES: { key: string; label: string }[] = [
-  { key: 'PCGC', label: 'PCGC' },
-  { key: 'CIERRE_INDICADORES', label: 'Cierre oficial de indicadores' },
+  { key: 'PCGC', label: 'Auditoría PCGC' },
+  { key: 'RESULTADOS_PCGC', label: 'Recepción resultados PCGC' },
   { key: 'AUDITORIA_ISO', label: 'Auditoría ISO 9001' },
+  { key: 'RESULTADOS_ISO', label: 'Recepción resultados ISO' },
+  { key: 'AVANCE_SSI', label: 'Avance intermedio SSI Ventas' },
+  { key: 'CIERRE_SSI', label: 'Cierre de ola SSI Ventas' },
+  { key: 'AVANCE_CSI', label: 'Avance intermedio CSI Posventa' },
+  { key: 'CIERRE_CSI', label: 'Cierre de ola CSI Posventa' },
+  { key: 'CIERRE_INDICADORES', label: 'Cierre oficial de indicadores' },
   { key: 'TEST_TALLER', label: 'Test de taller' },
   { key: 'VISITA_SALTA', label: 'Visita a Salta' },
   { key: 'INDUCCION_CALIDAD', label: 'Inducción de Calidad' },

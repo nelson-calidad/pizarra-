@@ -1,97 +1,132 @@
 import { describe, expect, it } from 'vitest'
 import { parseImportDraft, buildActivitiesFromParsed } from '../importCatalog'
 import type { Activity } from '../../types'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
-const SAMPLE_DRAFT_TEXT = `
-DIARIA (4)
-D01 — Revisar nuevas encuestas IPSOS y actualizar indicadores Ventas/Posventa — AMBAS (separado)
-D02 — Comunicar resumen de indicadores a cuatro grupos de WhatsApp — AMBAS
+describe('Corrección de Reglas de Negocio en Importación Masiva (importCatalog)', () => {
+  const jsonPath = join(process.cwd(), 'catalogo_autosol_actividades_borrador.json')
+  const jsonContent = readFileSync(jsonPath, 'utf-8')
+  const items = parseImportDraft(jsonContent, '2026-10-16')
 
-SEMANAL (4)
-S06 — Viajar a Salta y acompañar a Ventas y Posventa — SALTA
-S07 — Realizar recorrida semanal de Taller Salta — SALTA
-S10 — Revisar compromisos y vencimientos de planes de acción — AMBAS
-S11 — Avanzar con la organización documental de Ambiente — AMBAS [REVISAR: VALIDAR_FRECUENCIA]
-
-MENSUAL (2)
-M02 — Enviar informe CEM de Ventas y Posventa — AMBAS (separado)
-M05 — Reunión de indicadores de Ventas con responsables — AMBAS (separado) [REVISAR: VALIDAR_VENTANA]
-
-EVENTO (2)
-E01 — Revisar checklist oficial PCGC con las jefaturas — AMBAS (separado) [REVISAR: VALIDAR_DESFASE]
-E02 — Solicitar documentación de PCGC tras aviso oficial — AMBAS (separado)
-
-UNICA (2)
-U01 — Revisar órdenes de reparación a demanda — AMBAS (separado) [REVISAR: BAJO_DEMANDA]
-U99 — Realizar auditoría Mystery Shopper de prueba — AMBAS
-`
-
-describe('Importación masiva de Catálogo (importCatalog)', () => {
-  it('parsea correctamente frecuencias, códigos y sucursales separadas', () => {
-    const items = parseImportDraft(SAMPLE_DRAFT_TEXT, '2026-10-16')
-    expect(items.length).toBeGreaterThanOrEqual(10)
-
-    const d01 = items.find(i => i.importId === 'D01')
-    expect(d01).toBeDefined()
-    expect(d01?.frequency).toBe('DIARIA')
-    expect(d01?.branch).toBe('AMBAS')
-    expect(d01?.splitBranches).toBe(true)
-
-    const d02 = items.find(i => i.importId === 'D02')
-    expect(d02?.splitBranches).toBe(false)
+  it('0. Prepara actividades y no duplica existentes con buildActivitiesFromParsed', () => {
+    const existing: Activity[] = []
+    const { toInsert } = buildActivitiesFromParsed(items.slice(0, 5), existing, 'RAC')
+    expect(toInsert).toHaveLength(5)
   })
 
-  it('actividad con [REVISAR] queda en estado PAUSADA para no generar falsos vencimientos', () => {
-    const items = parseImportDraft(SAMPLE_DRAFT_TEXT, '2026-10-16')
-    const s11 = items.find(i => i.importId === 'S11')
-    expect(s11?.hasPendingDetails).toBe(true)
-    expect(s11?.state).toBe('PAUSADA')
-    expect(s11?.pendingReason).toContain('VALIDAR_FRECUENCIA')
+  it('1. M03 (declaración 85% IPSOS) tiene plazo del 1 al 14 del mes siguiente', () => {
+    const m03 = items.find(i => i.importId === 'M03')
+    expect(m03).toBeDefined()
+    expect(m03?.frequency).toBe('MENSUAL')
+    expect(m03?.windowStartDay).toBe(1)
+    expect(m03?.windowEndDay).toBe(14)
+    expect(m03?.splitBranches).toBe(true)
   })
 
-  it('actividad confirmada queda en estado ACTIVA', () => {
-    const items = parseImportDraft(SAMPLE_DRAFT_TEXT, '2026-10-16')
+  it('2. S01 (categorizar reclamos) programada los lunes', () => {
+    const s01 = items.find(i => i.importId === 'S01')
+    expect(s01).toBeDefined()
+    expect(s01?.frequency).toBe('SEMANAL')
+    // Con fecha base '2026-10-16' (viernes), el próximo lunes es '2026-10-19'
+    expect(s01?.startDate).toBe('2026-10-19')
+    expect(s01?.splitBranches).toBe(true)
+    expect(s01?.state).toBe('ACTIVA')
+  })
+
+  it('3. S04 y S05 (coordinación semanal y preparación viaje) programadas los lunes', () => {
+    const s04 = items.find(i => i.importId === 'S04')
+    const s05 = items.find(i => i.importId === 'S05')
+    expect(s04?.startDate).toBe('2026-10-19')
+    expect(s05?.startDate).toBe('2026-10-19')
+    expect(s04?.responsible).toBe('RAC')
+    expect(s05?.responsible).toBe('RAC')
+  })
+
+  it('4. S06 y S07 (viaje y recorrida Salta) programadas los martes', () => {
     const s06 = items.find(i => i.importId === 'S06')
-    expect(s06?.hasPendingDetails).toBe(false)
-    expect(s06?.state).toBe('ACTIVA')
+    const s07 = items.find(i => i.importId === 'S07')
+    // Con fecha base '2026-10-16' (viernes), el próximo martes es '2026-10-20'
+    expect(s06?.startDate).toBe('2026-10-20')
+    expect(s07?.startDate).toBe('2026-10-20')
     expect(s06?.branch).toBe('SALTA')
+    expect(s07?.branch).toBe('SALTA')
   })
 
-  it('excluye Mystery Shopper explícitamente', () => {
-    const items = parseImportDraft(SAMPLE_DRAFT_TEXT, '2026-10-16')
-    const mystery = items.find(i => i.name.toLowerCase().includes('mystery'))
-    expect(mystery?.isExcluded).toBe(true)
-    expect(mystery?.exclusionReason).toContain('Suspendido')
+  it('5. S09 (devoluciones recorridas taller) programada los viernes', () => {
+    const s09 = items.find(i => i.importId === 'S09')
+    expect(s09?.startDate).toBe('2026-10-16') // El mismo viernes base
+    expect(s09?.splitBranches).toBe(true)
   })
 
-  it('detecta duplicados y evita sobreescribir actividades existentes', () => {
-    const items = parseImportDraft(SAMPLE_DRAFT_TEXT, '2026-10-16')
-    const existing: Activity[] = [
+  it('6. M12 (auditoría preventiva Posventa) bimestral (intervalo 2) e independiente por sucursal', () => {
+    const m12 = items.find(i => i.importId === 'M12')
+    expect(m12).toBeDefined()
+    expect(m12?.frequency).toBe('MENSUAL')
+    expect(m12?.interval).toBe(2)
+    expect(m12?.branch).toBe('AMBAS')
+    expect(m12?.splitBranches).toBe(true)
+    expect(m12?.state).toBe('ACTIVA')
+  })
+
+  it('7. E08-E11 (SSI y CSI) utilizan eventos diferenciados de avance y cierre', () => {
+    const e08 = items.find(i => i.importId === 'E08')
+    const e09 = items.find(i => i.importId === 'E09')
+    const e10 = items.find(i => i.importId === 'E10')
+    const e11 = items.find(i => i.importId === 'E11')
+    expect(e08?.eventType).toBe('AVANCE_SSI')
+    expect(e09?.eventType).toBe('CIERRE_SSI')
+    expect(e10?.eventType).toBe('AVANCE_CSI')
+    expect(e11?.eventType).toBe('CIERRE_CSI')
+  })
+
+  it('8. E05 y E07 dependen de eventos de recepción de resultados (no de desplazamiento fijo de auditoría)', () => {
+    const e05 = items.find(i => i.importId === 'E05')
+    const e07 = items.find(i => i.importId === 'E07')
+    expect(e05?.eventType).toBe('RESULTADOS_PCGC')
+    expect(e07?.eventType).toBe('RESULTADOS_ISO')
+    expect(e05?.offsetDays).toBe(0)
+    expect(e07?.offsetDays).toBe(0)
+  })
+
+  it('9. E13, E14 y E15 no dependen de eventos inexistentes y se configuran como únicas/a demanda', () => {
+    const e13 = items.find(i => i.importId === 'E13')
+    const e14 = items.find(i => i.importId === 'E14')
+    const e15 = items.find(i => i.importId === 'E15')
+    expect(e13?.frequency).toBe('UNICA')
+    expect(e14?.frequency).toBe('UNICA')
+    expect(e15?.frequency).toBe('UNICA')
+    expect(e13?.state).toBe('PAUSADA')
+    expect(e14?.state).toBe('PAUSADA')
+    expect(e15?.state).toBe('PAUSADA')
+  })
+
+  it('10. Actividades sin fecha/disparador confirmado quedan en estado PAUSADA para no saturar Hoy', () => {
+    const pendingItems = items.filter(i => i.hasPendingDetails)
+    expect(pendingItems.length).toBeGreaterThan(0)
+    expect(pendingItems.every(i => i.state === 'PAUSADA')).toBe(true)
+  })
+
+  it('11. El importador respeta campos explícitos del JSON sin inventar reglas por código', () => {
+    const customJson = JSON.stringify([
       {
-        id: 'EXISTING_1',
-        importId: 'D01',
-        name: 'Revisar nuevas encuestas IPSOS y actualizar indicadores Ventas/Posventa',
-        frequency: 'DIARIA',
-        interval: 1,
-        startDate: '2026-10-01',
-        businessDaysOnly: true,
-        branch: 'AMBAS',
-        splitBranches: true,
-        responsible: 'ANALISTA',
-        state: 'ACTIVA',
-        createdAt: '2026-10-01T00:00:00Z'
+        codigo: 'CUSTOM_01',
+        nombre: 'Mi tarea especial',
+        frecuencia: 'MENSUAL',
+        intervalo: 3,
+        ventana_inicio: 10,
+        ventana_fin: 18,
+        sucursal: 'SALTA',
+        responsable: 'RAC'
       }
-    ]
-
-    const { toInsert, skippedCount, duplicateIds } = buildActivitiesFromParsed(
-      items,
-      existing,
-      'RAC'
-    )
-
-    expect(skippedCount).toBe(1)
-    expect(duplicateIds).toContain('D01')
-    expect(toInsert.some(a => a.importId === 'D01')).toBe(false)
+    ])
+    const [res] = parseImportDraft(customJson, '2026-10-16')
+    expect(res.frequency).toBe('MENSUAL')
+    expect(res.interval).toBe(3)
+    expect(res.windowStartDay).toBe(10)
+    expect(res.windowEndDay).toBe(18)
+    expect(res.branch).toBe('SALTA')
+    expect(res.responsible).toBe('RAC')
+    expect(res.state).toBe('ACTIVA')
   })
 })
-

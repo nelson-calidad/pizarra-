@@ -1,7 +1,7 @@
 export type Status = 'PENDIENTE' | 'HECHO' | 'ARCHIVADO'
 export type View = 'board' | 'today' | 'reminders' | 'calendar' | 'done' | 'archived' | 'activity'
 export type Section = 'board' | 'agenda'
-export type AgendaView = 'today' | 'week' | 'month'
+export type AgendaView = 'today' | 'week' | 'month' | 'backlog'
 export type SyncStatus = 'local' | 'idle' | 'saving' | 'pending' | 'error' | 'offline' | 'auth'
 
 export type Note = {
@@ -71,7 +71,7 @@ export type SyncOp = {
 /** Rol de quien ejecuta o es responsable. Ambos trabajan sobre Jujuy y Salta. */
 export type Role = 'RAC' | 'ANALISTA'
 export type Branch = 'JUJUY' | 'SALTA'
-export type BranchScope = Branch | 'AMBAS'
+export type BranchScope = Branch | 'AMBAS' | 'GENERAL'
 
 export type Frequency =
   | 'UNICA'

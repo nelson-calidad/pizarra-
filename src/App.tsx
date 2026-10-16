@@ -672,38 +672,6 @@ export default function App() {
         ) : (
           <div className="sidebar-section">
             <div className="sidebar-section-header">
-              <span className="sidebar-section-title">RESPONSABLE</span>
-            </div>
-            <div className="workspace-tabs-list">
-              <button
-                type="button"
-                className={`workspace-tab-item ${personFilter === 'TODOS' ? 'active' : ''}`}
-                onClick={() => setPersonFilter('TODOS')}
-              >
-                <Users size={15} />
-                <span className="workspace-tab-name">Todos</span>
-              </button>
-              <button
-                type="button"
-                className={`workspace-tab-item ${personFilter === 'RAC' ? 'active' : ''}`}
-                onClick={() => setPersonFilter(p => (p === 'RAC' ? 'TODOS' : 'RAC'))}
-              >
-                <User size={15} />
-                <span className="workspace-tab-name">RAC</span>
-              </button>
-              <button
-                type="button"
-                className={`workspace-tab-item ${personFilter === 'ANALISTA' ? 'active' : ''}`}
-                onClick={() =>
-                  setPersonFilter(p => (p === 'ANALISTA' ? 'TODOS' : 'ANALISTA'))
-                }
-              >
-                <User size={15} />
-                <span className="workspace-tab-name">Analista</span>
-              </button>
-            </div>
-
-            <div className="sidebar-section-header" style={{ marginTop: 14 }}>
               <span className="sidebar-section-title">SUCURSAL</span>
             </div>
             <div className="workspace-tabs-list">
@@ -713,7 +681,7 @@ export default function App() {
                 onClick={() => setBranchFilter('TODAS')}
               >
                 <span className="cat-dot" style={{ background: '#6366f1' }} />
-                <span className="workspace-tab-name">Ambas sucursales</span>
+                <span className="workspace-tab-name">Todas</span>
               </button>
               <button
                 type="button"

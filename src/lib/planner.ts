@@ -403,6 +403,82 @@ export function buildTodayView(
   }
 }
 
+export type BacklogViewModel = {
+  overdueTasks: Execution[]
+  dailyBacklog: DailyBacklogGroup[]
+  totalCount: number
+}
+
+/**
+ * Construye el modelo para la vista ANTERIORES:
+ * Todas las actividades cuyo plazo terminó (dueDate < today) y siguen sin cumplimiento registrado.
+ * Para diarias, agrupa múltiples fechas pendientes bajo el mismo grupo para no saturar.
+ */
+export function buildBacklogView(
+  activities: Activity[],
+  persisted: Execution[],
+  events: PlannerEvent[],
+  today: ISODate,
+  filter: ExecFilter = {}
+): BacklogViewModel {
+  const actMap = new Map(activities.map(a => [a.id, a]))
+  // Buscar hasta 90 días atrás
+  const from = addDays(today, -90)
+  const to = addDays(today, -1)
+  const all = buildExecutions(activities, persisted, events, from, to).filter(e =>
+    matchesFilter(e, filter, actMap.get(e.activityId), today)
+  )
+
+  const overdueRegular: Execution[] = []
+  const overdueDailiesByKey = new Map<string, Execution[]>()
+
+  for (const e of all) {
+    if (isResolved(e.status)) continue
+    if (e.dueDate >= today) continue
+
+    const act = actMap.get(e.activityId)
+    // No generar vencimientos anteriores a la fecha efectiva de inicio
+    if (act?.startDate && e.dueDate < act.startDate) continue
+    if (act?.effectiveFrom && e.dueDate < act.effectiveFrom) continue
+
+    if (act?.frequency === 'DIARIA') {
+      const key = `${e.activityId}__${e.branch}`
+      const arr = overdueDailiesByKey.get(key) || []
+      arr.push(e)
+      overdueDailiesByKey.set(key, arr)
+    } else {
+      overdueRegular.push(e)
+    }
+  }
+
+  const dailyBacklog: DailyBacklogGroup[] = []
+  let totalDailies = 0
+  for (const [, list] of overdueDailiesByKey.entries()) {
+    if (list.length === 1) {
+      overdueRegular.push(list[0])
+    } else if (list.length > 1) {
+      totalDailies += list.length
+      const first = list[0]
+      const act = actMap.get(first.activityId)
+      dailyBacklog.push({
+        activityId: first.activityId,
+        activityName: act?.name || first.activityName || 'Actividad diaria',
+        branch: first.branch,
+        items: list.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+      })
+    }
+  }
+
+  // Ordenar tareas vencidas por fecha descendente
+  overdueRegular.sort((a, b) => b.dueDate.localeCompare(a.dueDate))
+
+  return {
+    overdueTasks: overdueRegular,
+    dailyBacklog,
+    totalCount: overdueRegular.length + totalDailies
+  }
+}
+
 export type WeekDayColumn = {
   date: ISODate
   isBusinessDay: boolean

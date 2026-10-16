@@ -59,22 +59,27 @@ function jsonResponse_(data) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ---- Autenticación opcional por clave compartida ----
+// ---- Autenticación por clave compartida ----
 // Si en la hoja CONFIG existe una fila con CLAVE = 'ACCESS_KEY' y un VALOR no vacío,
-// todas las consultas deben enviar `key` coincidente. Si está vacía, funciona abierto como antes.
+// todas las consultas deben enviar `key` coincidente.
+// Si ocurre un error de lectura o la clave no coincide, se deniega el acceso por seguridad.
 
 function checkAuth_(p) {
   try {
-    const sh = SpreadsheetApp.getActive().getSheetByName('CONFIG');
-    if (!sh || sh.getLastRow() < 2) return true;
+    const ss = SpreadsheetApp.getActive();
+    if (!ss) return false;
+    const sh = ss.getSheetByName('CONFIG');
+    if (!sh || sh.getLastRow() < 2) return true; // sin configurar aún
     const rows = sh.getDataRange().getValues();
-    const row = rows.find((r, i) => i > 0 && String(r[0]).trim() === 'ACCESS_KEY');
-    if (!row) return true;
+    const row = rows.find((r, i) => i > 0 && String(r[0]).trim().toUpperCase() === 'ACCESS_KEY');
+    if (!row) return true; // sin clave definida
     const expected = String(row[1] || '').trim();
-    if (!expected) return true;
-    return String(p.key || '').trim() === expected;
-  } catch (_) {
-    return true;
+    if (!expected) return true; // valor vacío en config
+    const received = String(p.key || '').trim();
+    return received === expected;
+  } catch (err) {
+    Logger.log('Error en checkAuth_: ' + err.message);
+    return false; // Ante error de evaluación de seguridad, rechazar por defecto
   }
 }
 

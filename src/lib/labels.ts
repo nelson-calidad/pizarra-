@@ -12,12 +12,14 @@ export const ROLE_LONG: Record<Role, string> = {
 export const BRANCH_LABEL: Record<BranchScope, string> = {
   JUJUY: 'Jujuy',
   SALTA: 'Salta',
-  AMBAS: 'Jujuy y Salta'
+  AMBAS: 'Jujuy y Salta',
+  GENERAL: 'General'
 }
 export const BRANCH_SHORT: Record<BranchScope, string> = {
   JUJUY: 'JUJ',
   SALTA: 'SAL',
-  AMBAS: 'J+S'
+  AMBAS: 'J+S',
+  GENERAL: 'GEN'
 }
 
 export const FREQ_LABEL: Record<Frequency, string> = {

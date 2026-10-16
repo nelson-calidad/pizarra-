@@ -398,120 +398,133 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
           </div>
         )}
 
-        {/* 3. Sucursal y Responsable habitual */}
-        <div className="form-grid-2">
-          <div className="form-block">
-            <span className="form-label">Sucursal</span>
-            <div className="segmented-control">
-              {(['JUJUY', 'SALTA', 'AMBAS'] as BranchScope[]).map(b => (
-                <button
-                  type="button"
-                  key={b}
-                  className={branch === b ? 'active' : ''}
-                  onClick={() => setBranch(b)}
-                >
-                  {b === 'AMBAS' ? 'Ambas' : BRANCH_LABEL[b]}
-                </button>
-              ))}
-            </div>
-            {branch === 'AMBAS' && (
-              <label className="checkbox-inline">
-                <input
-                  type="checkbox"
-                  checked={splitBranches}
-                  onChange={e => setSplitBranches(e.target.checked)}
-                />
-                <span>Cumplimiento separado Jujuy / Salta</span>
-              </label>
-            )}
+        {/* 3. Dónde (Sucursal) */}
+        <div className="form-block">
+          <span className="form-label">¿Dónde?</span>
+          <div className="segmented-control">
+            {(['JUJUY', 'SALTA', 'AMBAS', 'GENERAL'] as BranchScope[]).map(b => (
+              <button
+                type="button"
+                key={b}
+                className={branch === b ? 'active' : ''}
+                onClick={() => setBranch(b)}
+              >
+                {b === 'AMBAS' ? 'Ambas (J+S)' : BRANCH_LABEL[b]}
+              </button>
+            ))}
           </div>
-
-          <div className="form-block">
-            <span className="form-label">Responsable habitual</span>
-            <div className="segmented-control">
-              {(['RAC', 'ANALISTA'] as Role[]).map(r => (
-                <button
-                  type="button"
-                  key={r}
-                  className={responsible === r ? 'active' : ''}
-                  onClick={() => setResponsible(r)}
-                  title={ROLE_LONG[r]}
-                >
-                  {ROLE_LABEL[r]}
-                </button>
-              ))}
-            </div>
-          </div>
+          {branch === 'AMBAS' && (
+            <label className="checkbox-inline" style={{ marginTop: 6 }}>
+              <input
+                type="checkbox"
+                checked={splitBranches}
+                onChange={e => setSplitBranches(e.target.checked)}
+              />
+              <span>Cumplimiento independiente Jujuy y Salta</span>
+            </label>
+          )}
         </div>
 
-        {/* Modalidad de cumplimiento */}
-        <div className="form-grid-2">
-          <div className="form-block">
-            <span className="form-label">Modalidad de cumplimiento</span>
-            <div className="segmented-control">
-              <button
-                type="button"
-                className={completionMode === 'CUALQUIERA' ? 'active' : ''}
-                onClick={() => setCompletionMode('CUALQUIERA')}
-                title="Cualquiera de los dos (1 clic)"
-              >
-                Cualquiera
-              </button>
-              <button
-                type="button"
-                className={completionMode === 'CONJUNTA' ? 'active' : ''}
-                onClick={() => setCompletionMode('CONJUNTA')}
-                title="Trabajo conjunto (RAC + Analista)"
-              >
-                Conjunta
-              </button>
-              <button
-                type="button"
-                className={completionMode === 'AMBOS_INDIVIDUAL' ? 'active' : ''}
-                onClick={() => setCompletionMode('AMBOS_INDIVIDUAL')}
-                title="Doble confirmación individual (1/2 y 2/2)"
-              >
-                Ambos
-              </button>
-            </div>
-          </div>
-
-          <label className="form-block">
-            <span className="form-label">Verbo de acción (opcional)</span>
-            <input
-              className="form-input"
-              value={completionLabel}
-              onChange={e => setCompletionLabel(e.target.value)}
-              placeholder="Auto (Ej: Revisado, Enviado, Hecho)"
-            />
-          </label>
+        {/* Resumen / Confirmación clara al guardar */}
+        <div className="activity-summary-banner" style={{
+          background: 'var(--color-bg-subtle, #f1f5f9)',
+          padding: '8px 12px',
+          borderRadius: 6,
+          fontSize: '0.85rem',
+          color: 'var(--color-text-muted, #475569)',
+          border: '1px solid var(--color-border, #e2e8f0)',
+          margin: '8px 0'
+        }}>
+          <b>Programación: </b>
+          <span>
+            {name.trim() || 'Actividad'} ·{' '}
+            {frequency === 'UNICA'
+              ? `Una sola vez (${startDate || today})`
+              : frequency === 'DIARIA'
+              ? (businessDaysOnly ? 'Todos los días hábiles' : 'Todos los días')
+              : frequency === 'SEMANAL'
+              ? (flexible ? `Semanal flexible (antes del ${WEEKDAY_OPTIONS.find(w => w.dow === selectedDow)?.label || 'viernes'})` : `Todos los ${WEEKDAY_OPTIONS.find(w => w.dow === selectedDow)?.label || 'martes'}`)
+              : supportsWindow && useWindow
+              ? `Mensual (del ${windowStartDay} al ${windowEndDay})`
+              : `${FREQ_LABEL[frequency]}`} ·{' '}
+            {branch === 'AMBAS' ? (splitBranches ? 'Jujuy y Salta (independientes)' : 'Jujuy y Salta (juntas)') : BRANCH_LABEL[branch]}
+          </span>
         </div>
 
-        {/* Opciones avanzadas opcionales */}
+        {/* Opciones avanzadas opcionales (colapsadas por defecto) */}
         <button
           type="button"
           className="btn-advanced-toggle"
           onClick={() => setShowAdvanced(s => !s)}
         >
-          <span>Opciones avanzadas</span>
+          <span>{showAdvanced ? 'Menos opciones' : 'Opciones avanzadas (responsable, verbo, aviso...)'}</span>
           {showAdvanced ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
         </button>
 
         {showAdvanced && (
           <div className="advanced-box">
-            <label className="form-block">
-              <span className="form-label">Nota / orientación breve</span>
-              <input
-                className="form-input"
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-                placeholder="Opcional…"
-              />
-            </label>
+            <div className="form-grid-2">
+              <div className="form-block">
+                <span className="form-label">Responsable habitual</span>
+                <div className="segmented-control">
+                  {(['RAC', 'ANALISTA'] as Role[]).map(r => (
+                    <button
+                      type="button"
+                      key={r}
+                      className={responsible === r ? 'active' : ''}
+                      onClick={() => setResponsible(r)}
+                      title={ROLE_LONG[r]}
+                    >
+                      {ROLE_LABEL[r]}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            <div className="form-grid-3">
+              <div className="form-block">
+                <span className="form-label">Modalidad de cumplimiento</span>
+                <div className="segmented-control">
+                  <button
+                    type="button"
+                    className={completionMode === 'CUALQUIERA' ? 'active' : ''}
+                    onClick={() => setCompletionMode('CUALQUIERA')}
+                    title="Cualquiera de los dos (1 clic)"
+                  >
+                    Cualquiera
+                  </button>
+                  <button
+                    type="button"
+                    className={completionMode === 'CONJUNTA' ? 'active' : ''}
+                    onClick={() => setCompletionMode('CONJUNTA')}
+                    title="Trabajo conjunto (RAC + Analista)"
+                  >
+                    Conjunta
+                  </button>
+                  <button
+                    type="button"
+                    className={completionMode === 'AMBOS_INDIVIDUAL' ? 'active' : ''}
+                    onClick={() => setCompletionMode('AMBOS_INDIVIDUAL')}
+                    title="Doble confirmación (1/2 y 2/2)"
+                  >
+                    Ambos
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="form-grid-2">
               <label className="form-block">
-                <span className="form-label">Área</span>
+                <span className="form-label">Verbo de acción (opcional)</span>
+                <input
+                  className="form-input"
+                  value={completionLabel}
+                  onChange={e => setCompletionLabel(e.target.value)}
+                  placeholder="Auto (Ej: Revisado, Enviado, Hecho)"
+                />
+              </label>
+
+              <label className="form-block">
+                <span className="form-label">Área / Categoría</span>
                 <select
                   className="form-select"
                   value={category}
@@ -524,10 +537,22 @@ export function ActivityModal({ initial, isEdit, defaultRole = 'RAC', onSave, on
                   ))}
                 </select>
               </label>
+            </div>
 
+            <label className="form-block">
+              <span className="form-label">Nota / orientación breve</span>
+              <input
+                className="form-input"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                placeholder="Opcional…"
+              />
+            </label>
+
+            <div className="form-grid-2">
               {frequency !== 'UNICA' && frequency !== 'EVENTO' && (
                 <label className="form-block">
-                  <span className="form-label">Cada cuántas</span>
+                  <span className="form-label">Cada cuántas (intervalo)</span>
                   <input
                     type="number"
                     min={1}

@@ -15,8 +15,9 @@ import {
   BRANCH_LABEL, BRANCH_SHORT, describeRule, eventTypeLabel, FREQ_LABEL, ROLE_LABEL
 } from '../lib/labels'
 import {
-  buildExecutions, buildTodayView, buildWeekView, groupExecutionsByActivity,
-  leadDaysFor, matchesFilter, visualState, type DailyBacklogGroup
+  buildExecutions, buildTodayView, buildWeekView, buildBacklogView,
+  groupExecutionsByActivity, leadDaysFor, matchesFilter, visualState,
+  type DailyBacklogGroup
 } from '../lib/planner'
 import { ExecutionRow } from './ExecutionRow'
 import { GroupedExecutionCard } from './GroupedExecutionCard'
@@ -30,8 +31,8 @@ type Props = {
   notes: Note[]
   today: string
   currentUser: Role
-  personFilter: Role | 'TODOS'
-  onPersonFilterChange: (p: Role | 'TODOS') => void
+  personFilter?: Role | 'TODOS'
+  onPersonFilterChange?: (p: Role | 'TODOS') => void
   branchFilter: BranchScope | 'TODAS'
   onBranchFilterChange: (b: BranchScope | 'TODAS') => void
   query: string
@@ -59,8 +60,7 @@ export function AgendaSection({
   notes,
   today,
   currentUser,
-  personFilter,
-  onPersonFilterChange,
+  personFilter = 'TODOS',
   branchFilter,
   onBranchFilterChange,
   query,
@@ -110,11 +110,6 @@ export function AgendaSection({
     [activities, persistedExecutions, events, today, filter]
   )
 
-  const groupedOverdueTasks = useMemo(
-    () => groupExecutionsByActivity(todayModel.overdueTasks, actMap),
-    [todayModel.overdueTasks, actMap]
-  )
-
   const groupedTodayTasks = useMemo(
     () => groupExecutionsByActivity(todayModel.todayTasks, actMap),
     [todayModel.todayTasks, actMap]
@@ -145,6 +140,17 @@ export function AgendaSection({
   const weekModel = useMemo(
     () => buildWeekView(activities, persistedExecutions, events, weekRef, today, filter),
     [activities, persistedExecutions, events, weekRef, today, filter]
+  )
+
+  // ---- Modelo ANTERIORES ----
+  const backlogModel = useMemo(
+    () => buildBacklogView(activities, persistedExecutions, events, today, filter),
+    [activities, persistedExecutions, events, today, filter]
+  )
+
+  const groupedBacklogTasks = useMemo(
+    () => groupExecutionsByActivity(backlogModel.overdueTasks, actMap),
+    [backlogModel.overdueTasks, actMap]
   )
 
   // ---- Modelo MES ----
@@ -179,14 +185,11 @@ export function AgendaSection({
     setSelectedCalDate(fromParts(ny, nm, 1))
   }
 
-  const totalPendingToday =
-    todayModel.todayTasks.length +
-    todayModel.overdueTasks.length +
-    todayModel.dailyBacklog.length
+  const totalPendingToday = todayModel.todayTasks.length
 
   return (
     <section className="agenda-page">
-      {/* Barra superior minimalista: Hoy / Semana / Mes + Filtros discretos */}
+      {/* Barra superior minimalista: Hoy / Semana / Mes / Anteriores + Filtro opcional por sucursal */}
       <div className="agenda-toolbar">
         <div className="agenda-views-tabs" role="tablist" aria-label="Vistas de Agenda">
           <button
@@ -228,41 +231,36 @@ export function AgendaSection({
           >
             <span>Mes</span>
           </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={agendaView === 'backlog' && !showCatalog}
+            className={`agenda-tab-btn ${agendaView === 'backlog' && !showCatalog ? 'active' : ''}`}
+            onClick={() => {
+              setShowCatalog(false)
+              setAgendaView('backlog')
+            }}
+            title="Compromisos de períodos pasados que aún no se registraron"
+          >
+            <span>Anteriores</span>
+            {backlogModel.totalCount > 0 && (
+              <em className="tab-pill tone-muted" style={{ background: 'var(--color-bg-subtle, #cbd5e1)', color: '#334155' }}>
+                {backlogModel.totalCount}
+              </em>
+            )}
+          </button>
         </div>
 
-        {/* Filtros minimalistas (Punto 8) */}
+        {/* Filtro único y opcional por sucursal (Todas | Jujuy | Salta) */}
         <div className="agenda-filters">
-          <div className="segmented-control segmented-xs" aria-label="Filtro por persona">
-            <button
-              type="button"
-              className={personFilter === 'TODOS' ? 'active' : ''}
-              onClick={() => onPersonFilterChange('TODOS')}
-            >
-              Todos
-            </button>
-            <button
-              type="button"
-              className={personFilter === 'RAC' ? 'active' : ''}
-              onClick={() => onPersonFilterChange('RAC')}
-            >
-              RAC
-            </button>
-            <button
-              type="button"
-              className={personFilter === 'ANALISTA' ? 'active' : ''}
-              onClick={() => onPersonFilterChange('ANALISTA')}
-            >
-              Analista
-            </button>
-          </div>
-
           <div className="segmented-control segmented-xs" aria-label="Filtro por sucursal">
             <button
               type="button"
               className={branchFilter === 'TODAS' ? 'active' : ''}
               onClick={() => onBranchFilterChange('TODAS')}
             >
-              Ambas sucursales
+              Todas
             </button>
             <button
               type="button"
@@ -367,46 +365,7 @@ export function AgendaSection({
             </div>
           )}
 
-          {/* 1. Vencidas y atraso compacto de diarias */}
-          {(groupedOverdueTasks.length > 0 || todayModel.dailyBacklog.length > 0) && (
-            <div className="exec-group group-overdue">
-              <div className="exec-group-header">
-                <h2>Vencidas pendientes</h2>
-                <span className="group-count-pill tone-danger">
-                  {todayModel.overdueTasks.length + todayModel.dailyBacklog.length}
-                </span>
-              </div>
-              <div className="exec-group-list">
-                {todayModel.dailyBacklog.map(bg => (
-                  <DailyBacklogRow
-                    key={`${bg.activityId}__${bg.branch}`}
-                    group={bg}
-                    onResolveAll={(status, reason) =>
-                      onBatchResolveBacklog(bg.items, status, reason)
-                    }
-                  />
-                ))}
-                {groupedOverdueTasks.map(group => (
-                  <GroupedExecutionCard
-                    key={group.activityId}
-                    group={group}
-                    today={today}
-                    currentUser={currentUser}
-                    onChangeStatus={onChangeStatus}
-                    onChangeExecutor={onChangeExecutor}
-                    onReschedule={onRescheduleExecution}
-                    onSaveObservation={onSaveObservation}
-                    onSelect={onSelectExecution}
-                    onEditActivity={onEditActivity}
-                    onDuplicateActivity={onDuplicateActivity}
-                    onTogglePauseActivity={onTogglePauseActivity}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 2. Actividades para hoy (diarias, semanales de hoy, o en ventana activa del 7 al 10) */}
+          {/* Actividades para hoy (diarias, semanales de hoy, o en ventana activa del 7 al 10) */}
           <div className="exec-group">
             <div className="exec-group-header">
               <h2>Para hacer hoy</h2>
@@ -719,7 +678,7 @@ export function AgendaSection({
             })}
           </div>
         </div>
-      ) : (
+      ) : agendaView === 'month' ? (
         /* =========================================================
            VISTA 3: MES (Calendario limpio + detalle del día seleccionado)
            ========================================================= */
@@ -885,6 +844,62 @@ export function AgendaSection({
               onOpenNewActivity={onOpenNewActivity}
             />
           </div>
+        </div>
+      ) : (
+        /* =========================================================
+           VISTA 4: ANTERIORES (Compromisos vencidos no registrados)
+           ========================================================= */
+        <div className="backlog-container">
+          <div className="today-header-line" style={{ marginBottom: 16 }}>
+            <div>
+              <h1 className="today-title">Actividades de períodos anteriores</h1>
+              <p className="today-sub">
+                {backlogModel.totalCount === 0
+                  ? 'No hay actividades anteriores pendientes de registro.'
+                  : `${backlogModel.totalCount} ${
+                      backlogModel.totalCount === 1 ? 'fecha pendiente' : 'fechas pendientes'
+                    } de registro`}
+              </p>
+            </div>
+          </div>
+
+          {backlogModel.totalCount === 0 ? (
+            <div className="today-done-banner">
+              <CheckCircle2 size={20} />
+              <span>Todo al día. No tenés compromisos anteriores sin registrar.</span>
+            </div>
+          ) : (
+            <div className="exec-group-list">
+              {/* Acumulaciones compactas de actividades diarias */}
+              {backlogModel.dailyBacklog.map(bg => (
+                <DailyBacklogRow
+                  key={`${bg.activityId}__${bg.branch}`}
+                  group={bg}
+                  onResolveAll={(status, reason) =>
+                    onBatchResolveBacklog(bg.items, status, reason)
+                  }
+                />
+              ))}
+
+              {/* Tareas no diarias agrupadas por actividad */}
+              {groupedBacklogTasks.map(group => (
+                <GroupedExecutionCard
+                  key={group.activityId}
+                  group={group}
+                  today={today}
+                  currentUser={currentUser}
+                  onChangeStatus={onChangeStatus}
+                  onChangeExecutor={onChangeExecutor}
+                  onReschedule={onRescheduleExecution}
+                  onSaveObservation={onSaveObservation}
+                  onSelect={onSelectExecution}
+                  onEditActivity={onEditActivity}
+                  onDuplicateActivity={onDuplicateActivity}
+                  onTogglePauseActivity={onTogglePauseActivity}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 

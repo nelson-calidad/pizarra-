@@ -360,6 +360,21 @@ export function ExecutionRow({
                   </div>
                 )}
 
+                {/* Acción secundaria para registrar que trabajaron Ambos */}
+                {!isDone && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMenu(false)
+                      const patch = toggleJointCompletion(execution, currentUser, ['RAC', 'ANALISTA'])
+                      onChangeStatus(execution, patch.status || 'REALIZADA', patch)
+                    }}
+                    title="Registrar que trabajaron juntos RAC y Analista"
+                  >
+                    <Users size={13} /> Realizado por Ambos (RAC + Analista)
+                  </button>
+                )}
+
                 {!isDone && execution.status !== 'NO_REALIZADA' && (
                   <button
                     type="button"

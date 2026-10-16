@@ -3,8 +3,8 @@ import type { Activity, Execution, PlannerEvent } from '../../types'
 import { addMonthsClamped, isoWeekKey, isLeapYear, isValidISO, addDays } from '../dates'
 import { occurrences, ruleDates, executionId, periodKey } from '../recurrence'
 import {
-  buildExecutions, buildTodayView, buildWeekView, pendingMaterialization,
-  reconcileAfterRuleChange, summarize, visualState,
+  buildExecutions, buildTodayView, buildWeekView, buildBacklogView,
+  pendingMaterialization, reconcileAfterRuleChange, summarize, visualState,
   matchesFilter, completionPatch, ruleChanged,
   deduplicateActivities, groupExecutionsByActivity,
   toggleJointCompletion, toggleIndividualConfirmation
@@ -455,6 +455,81 @@ describe('Etapa 4: Modalidades de cumplimiento y deduplicación', () => {
     expect(uncheckStep.status).toBe('EN_CURSO')
     expect(uncheckStep.confirmations?.RAC?.status).toBe('PENDIENTE')
     expect(uncheckStep.confirmations?.ANALISTA?.status).toBe('REALIZADA')
+  })
+})
+
+describe('Etapa 5: Vista Anteriores, Sucursales independientes y Cumplimiento simplificado', () => {
+  it('buildBacklogView agrupa actividades pasadas vencidas sin invadir la vista Hoy', () => {
+    const act = base({
+      id: 'A_BACKLOG',
+      name: 'Auditoría Mensual',
+      frequency: 'MENSUAL',
+      startDate: '2026-09-10',
+      branch: 'JUJUY'
+    })
+
+    // Ejecución calculada o pendiente de septiembre (vencida respecto a 2026-10-16)
+    const today = '2026-10-16'
+    const backlog = buildBacklogView([act], [], [], today)
+    expect(backlog.totalCount).toBeGreaterThan(0)
+    expect(backlog.overdueTasks.some(e => e.activityId === 'A_BACKLOG')).toBe(true)
+
+    // En la vista Hoy, las vencidas no saturan la lista todayTasks
+    const todayView = buildTodayView([act], [], [], today)
+    expect(todayView.todayTasks.some(e => e.activityId === 'A_BACKLOG')).toBe(false)
+  })
+
+  it('actividad para AMBAS genera cumplimientos independientes por sucursal y completar Jujuy deja pendiente Salta', () => {
+    const act = base({
+      id: 'A_CEM',
+      name: 'Enviar informe CEM',
+      frequency: 'MENSUAL',
+      startDate: '2026-10-15',
+      branch: 'AMBAS',
+      splitBranches: true
+    })
+
+    const execs = buildExecutions([act], [], [], '2026-10-01', '2026-10-31')
+    expect(execs).toHaveLength(2)
+    const jujuyExec = execs.find(e => e.branch === 'JUJUY')!
+    const saltaExec = execs.find(e => e.branch === 'SALTA')!
+    expect(jujuyExec).toBeDefined()
+    expect(saltaExec).toBeDefined()
+
+    // Completar Jujuy
+    const completedJujuy: Execution = {
+      ...jujuyExec,
+      status: 'REALIZADA',
+      completedBy: 'RAC',
+      completedAt: '2026-10-16T10:00:00Z'
+    }
+
+    // Re-evaluar ejecuciones combinando persistidas
+    const updatedExecs = buildExecutions([act], [completedJujuy], [], '2026-10-01', '2026-10-31')
+    const finalJujuy = updatedExecs.find(e => e.branch === 'JUJUY')!
+    const finalSalta = updatedExecs.find(e => e.branch === 'SALTA')!
+
+    expect(finalJujuy.status).toBe('REALIZADA')
+    expect(finalSalta.status).toBe('PENDIENTE')
+  })
+
+  it('registrar que trabajaron Ambos guarda a RAC y Analista en participantes', () => {
+    const ex: Execution = {
+      id: 'ex-ambos',
+      activityId: 'act-reunion',
+      dueDate: '2026-10-16',
+      period: '2026-10-16',
+      branch: 'JUJUY',
+      executor: 'RAC',
+      status: 'PENDIENTE',
+      createdAt: '2026-10-16'
+    }
+
+    const patch = toggleJointCompletion(ex, 'ANALISTA', ['RAC', 'ANALISTA'])
+    expect(patch.status).toBe('REALIZADA')
+    expect(patch.participants).toEqual(['RAC', 'ANALISTA'])
+    expect(patch.executor).toBe('ANALISTA')
+    expect(patch.completedBy).toBe('ANALISTA')
   })
 })
 

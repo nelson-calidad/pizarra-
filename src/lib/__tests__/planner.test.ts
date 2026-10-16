@@ -127,7 +127,7 @@ describe('recurrencias', () => {
   it('describe reglas', () => {
     expect(describeRule(base({ startDate: '2026-01-31' }))).toBe('Mensual · día 31 (o último)')
     expect(describeRule(base({ frequency: 'SEMANAL', startDate: '2026-10-12' }))).toBe('Semanal · lunes')
-    expect(describeRule(base({ frequency: 'EVENTO', eventType: 'PCGC', offsetDays: -7 }))).toBe('PCGC · 7 días antes')
+    expect(describeRule(base({ frequency: 'EVENTO', eventType: 'PCGC', offsetDays: -7 }))).toBe('Auditoría PCGC · 7 días antes')
   })
 })
 

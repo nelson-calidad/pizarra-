@@ -368,9 +368,19 @@ export default function App() {
   const handleImportActivities = (toImport: Activity[]) => {
     if (!toImport.length) return
     setActivities(list => [...list, ...toImport])
-    toImport.forEach(act => {
-      enqueue('upsertActivity', act.id, activityToSheet(act))
-    })
+    enqueue('batchUpsertActivities', undefined, toImport.map(activityToSheet))
+  }
+
+  const syncLocalToRemote = () => {
+    if (activities.length > 0) {
+      enqueue('batchUpsertActivities', undefined, activities.map(activityToSheet))
+    }
+    const nonVirtualExecs = executions.filter(e => !e.virtual)
+    if (nonVirtualExecs.length > 0) {
+      enqueue('batchUpsertExecutions', undefined, nonVirtualExecs.map(executionToSheet))
+    }
+    events.forEach(ev => enqueue('upsertEvent', ev.id, eventToSheet(ev)))
+    notes.forEach(n => enqueue('createNote', n.id, toSheet(n)))
   }
 
   const duplicateActivity = (act: Activity) => {
@@ -1009,6 +1019,7 @@ export default function App() {
           executions={executions}
           events={events}
           onClose={() => setSettingsOpen(false)}
+          onSyncLocalToRemote={syncLocalToRemote}
         />
       )}
 

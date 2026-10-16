@@ -16,6 +16,7 @@ type Props = {
   executions: Execution[]
   events: PlannerEvent[]
   onClose: () => void
+  onSyncLocalToRemote?: () => void
 }
 
 export function SettingsModal({
@@ -26,7 +27,8 @@ export function SettingsModal({
   activities,
   executions,
   events,
-  onClose
+  onClose,
+  onSyncLocalToRemote
 }: Props) {
   const [url, setUrl] = useState(getApiUrl())
   const [key, setKey] = useState(getAccessKey())
@@ -36,6 +38,9 @@ export function SettingsModal({
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
     setConnection(url, key)
+    if (url.trim()) {
+      onSyncLocalToRemote?.()
+    }
     setSavedMsg(true)
     setTimeout(() => setSavedMsg(false), 2500)
   }
@@ -119,13 +124,21 @@ export function SettingsModal({
             <button type="submit" className="btn-primary-sm">
               {savedMsg ? (
                 <>
-                  <Check size={13} /> Guardado
+                  <Check size={13} /> Guardado y sincronizando
                 </>
               ) : (
                 'Guardar conexión'
               )}
             </button>
-            <button type="button" className="btn-secondary-sm" onClick={retryNow}>
+            <button
+              type="button"
+              className="btn-secondary-sm"
+              onClick={() => {
+                onSyncLocalToRemote?.()
+                retryNow()
+              }}
+              title="Sube las actividades y notas locales a Google Sheets"
+            >
               <RefreshCw size={13} /> Sincronizar ahora
             </button>
           </div>
@@ -145,6 +158,28 @@ export function SettingsModal({
               {sync.status === 'error' && `Atención: error al sincronizar`}
             </b>
           </div>
+
+          {sync.status === 'local' && (
+            <div style={{ marginTop: 10, padding: '10px 12px', background: '#fef3c7', borderRadius: 8, fontSize: 13, color: '#92400e', lineHeight: 1.4 }}>
+              <b>📌 Modo Guardado Local activo:</b> Tus {activities.length} actividades están guardadas en este navegador. Para subirlas a Google Sheets, ingresá arriba la URL de tu Web App de Apps Script y hacé clic en <b>Guardar conexión</b>.
+            </div>
+          )}
+
+          {activities.length > 0 && sync.status !== 'local' && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: '#64748b' }}>Catálogo local: {activities.length} actividades</span>
+              <button
+                type="button"
+                className="btn-secondary-sm"
+                onClick={() => {
+                  onSyncLocalToRemote?.()
+                  retryNow()
+                }}
+              >
+                <RefreshCw size={12} /> Subir {activities.length} act. a Sheets
+              </button>
+            </div>
+          )}
           {sync.lastError && (
             <div className="settings-error-msg">
               <AlertCircle size={13} />

@@ -149,6 +149,21 @@ export async function flushQueue(): Promise<void> {
         const msg = r.error || 'Error desconocido'
         op.retries = (op.retries || 0) + 1
         op.lastError = msg
+        if (op.action === 'batchUpsertActivities' && /no reconocid/i.test(msg)) {
+          const list = Array.isArray(op.data) ? (op.data as Record<string, unknown>[]) : []
+          queue.shift()
+          const individualOps: SyncOp[] = list.map(item => ({
+            opId: crypto.randomUUID(),
+            action: 'upsertActivity',
+            id: item?.ID ? String(item.ID) : undefined,
+            data: item,
+            retries: 0,
+            createdAt: new Date().toISOString()
+          }))
+          queue.unshift(...individualOps)
+          persist()
+          continue
+        }
         if (isPermanent(msg) || op.retries >= 4) {
           // Se aparta para no bloquear la cola; queda visible en Configuración.
           failed.push(queue.shift()!)
@@ -256,7 +271,7 @@ export function mergeWithPending<T extends { id: string }>(fresh: T[], local: T[
     out.push(pend.has(f.id) && localById.has(f.id) ? localById.get(f.id)! : f)
   }
   for (const l of local) {
-    if (!seen.has(l.id) && pend.has(l.id) && !dels.has(l.id)) {
+    if (!seen.has(l.id) && !dels.has(l.id)) {
       seen.add(l.id)
       out.push(l)
     }

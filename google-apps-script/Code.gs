@@ -137,6 +137,7 @@ function route_(p, isWrite) {
     }
 
     if (a === 'upsertActivity')   return upsert_('ACTIVIDADES', p.id || (p.data && p.data.ID), p.data || {});
+    if (a === 'batchUpsertActivities') return batchUpsertActivities_(p.data || []);
     if (a === 'deleteActivity')   return del_('ACTIVIDADES', p.id);
 
     if (a === 'upsertExecution')  return upsert_('EJECUCIONES', p.id || (p.data && p.data.ID), p.data || {});
@@ -285,6 +286,39 @@ function upsert_(name, id, data) {
     }
   });
   return { success: true, data: Object.assign({ ID: targetId }, data), message: 'Actualizado' };
+}
+
+function batchUpsertActivities_(items) {
+  if (!Array.isArray(items) || !items.length) return { success: true, data: [] };
+  const sh = getSheet_('ACTIVIDADES');
+  ensureSheetHeaders_(sh, HEADERS.ACTIVIDADES);
+  const all = sh.getDataRange().getValues();
+  const headers = all[0].map(String);
+  const existingMap = new Map();
+  for (let i = 1; i < all.length; i++) {
+    existingMap.set(String(all[i][0]), i + 1);
+  }
+  const now = new Date().toISOString();
+  items.forEach(item => {
+    if (!item || !item.ID) return;
+    const id = String(item.ID);
+    const rowNum = existingMap.get(id);
+    if (!rowNum) {
+      const obj = Object.assign({ ID: id, CREADO_EN: now, ACTUALIZADO_EN: now }, item);
+      appendRow_('ACTIVIDADES', obj);
+      existingMap.set(id, sh.getLastRow());
+    } else {
+      item.ACTUALIZADO_EN = item.ACTUALIZADO_EN || now;
+      headers.forEach((key, colIdx) => {
+        if (Object.prototype.hasOwnProperty.call(item, key)) {
+          const v = item[key];
+          const cellVal = (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? "'" + v : (v === undefined || v === null ? '' : v);
+          sh.getRange(rowNum, colIdx + 1).setValue(cellVal);
+        }
+      });
+    }
+  });
+  return { success: true, data: { count: items.length } };
 }
 
 function batchUpsertExecutions_(items) {

@@ -10,6 +10,7 @@ import {
 } from '../lib/importCatalog'
 import { BRANCH_LABEL, ROLE_LABEL } from '../lib/labels'
 import { todayISO } from '../lib/dates'
+import { isRemoteEnabled } from '../services/sheetsApi'
 
 type Props = {
   existingActivities: Activity[]
@@ -363,6 +364,18 @@ export function ImportModal({
             <p className="success-subnote">
               Las actividades con detalles pendientes quedaron en estado <b>Pausada</b> para que no generen falsos vencimientos hasta que confirmes sus fechas definitivas.
             </p>
+            {!isRemoteEnabled() ? (
+              <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 8, background: '#fef3c7', color: '#92400e', fontSize: 13, textAlign: 'left', lineHeight: 1.4 }}>
+                <b>📌 Guardado en este navegador (Modo Local):</b>
+                <div style={{ marginTop: 4 }}>
+                  Para que las {importSummary.count} actividades se sincronicen con tu planilla de Google Sheets, recordá conectar la URL en <b>Configuración</b> (abajo a la izquierda) y hacer clic en <b>Guardar conexión</b>.
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 12, fontSize: 13, color: '#16a34a', fontWeight: 500 }}>
+                ✓ Enviando {importSummary.count} actividades a Google Sheets...
+              </div>
+            )}
             <button
               type="button"
               className="btn-new-note"

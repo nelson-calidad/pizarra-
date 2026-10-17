@@ -115,6 +115,94 @@ export function AgendaSection({
     [todayModel.todayTasks, actMap]
   )
 
+  const pendingFulfillmentsToday = useMemo(
+    () =>
+      todayModel.todayTasks.filter(
+        e => e.status !== 'REALIZADA' && e.status !== 'NO_REALIZADA'
+      ).length,
+    [todayModel.todayTasks]
+  )
+
+  // Agrupación visual inteligente por categorías cuando hay muchas actividades (> 6)
+  const todayCategoryBuckets = useMemo(() => {
+    if (groupedTodayTasks.length <= 6) return null
+
+    const BUCKETS = [
+      'Indicadores y encuestas',
+      'Reclamos y seguimiento',
+      'Controles y auditorías',
+      'Comunicaciones y reuniones',
+      'General y procesos'
+    ]
+
+    const map = new Map<string, typeof groupedTodayTasks>()
+    for (const b of BUCKETS) map.set(b, [])
+
+    for (const g of groupedTodayTasks) {
+      const cat = (g.activity?.category || '').toLowerCase()
+      const name = (g.activityName || '').toLowerCase()
+
+      let target = 'General y procesos'
+      if (
+        cat.includes('indicador') ||
+        cat.includes('encuesta') ||
+        name.includes('indicador') ||
+        name.includes('ipsos') ||
+        name.includes('encuesta') ||
+        name.includes('cem') ||
+        name.includes('ssi') ||
+        name.includes('csi')
+      ) {
+        target = 'Indicadores y encuestas'
+      } else if (
+        cat.includes('reclamo') ||
+        name.includes('reclamo') ||
+        name.includes('hot alert') ||
+        name.includes('seguimiento')
+      ) {
+        target = 'Reclamos y seguimiento'
+      } else if (
+        cat.includes('auditor') ||
+        cat.includes('control') ||
+        cat.includes('taller') ||
+        name.includes('control') ||
+        name.includes('auditor') ||
+        name.includes('pcgc') ||
+        name.includes('iso') ||
+        name.includes('taller') ||
+        name.includes('recorrida')
+      ) {
+        target = 'Controles y auditorías'
+      } else if (
+        cat.includes('comunic') ||
+        cat.includes('reun') ||
+        name.includes('comunic') ||
+        name.includes('whatsapp') ||
+        name.includes('reunión') ||
+        name.includes('reunion') ||
+        name.includes('informe') ||
+        name.includes('devolución')
+      ) {
+        target = 'Comunicaciones y reuniones'
+      }
+
+      if (!map.has(target)) map.set(target, [])
+      map.get(target)!.push(g)
+    }
+
+    return Array.from(map.entries())
+      .filter(([, items]) => items.length > 0)
+      .map(([name, items]) => {
+        const pendingCount = items.reduce(
+          (acc, g) =>
+            acc +
+            g.items.filter(e => e.status !== 'REALIZADA' && e.status !== 'NO_REALIZADA').length,
+          0
+        )
+        return { name, items, pendingCount }
+      })
+  }, [groupedTodayTasks])
+
   const groupedFlexibleSoon = useMemo(
     () => groupExecutionsByActivity(todayModel.flexibleSoon, actMap),
     [todayModel.flexibleSoon, actMap]
@@ -185,8 +273,6 @@ export function AgendaSection({
     setSelectedCalDate(fromParts(ny, nm, 1))
   }
 
-  const totalPendingToday = todayModel.todayTasks.length
-
   return (
     <section className="agenda-page">
       {/* Barra superior minimalista: Hoy / Semana / Mes / Anteriores + Filtro opcional por sucursal */}
@@ -203,7 +289,7 @@ export function AgendaSection({
             }}
           >
             <span>Hoy</span>
-            {totalPendingToday > 0 && <em className="tab-pill">{totalPendingToday}</em>}
+            {pendingFulfillmentsToday > 0 && <em className="tab-pill">{pendingFulfillmentsToday}</em>}
           </button>
 
           <button
@@ -339,13 +425,15 @@ export function AgendaSection({
             <div>
               <h1 className="today-title">{longDate(today)}</h1>
               <p className="today-sub">
-                {totalPendingToday === 0
+                {pendingFulfillmentsToday === 0
                   ? 'Todo al día.'
-                  : `${totalPendingToday} ${
-                      totalPendingToday === 1 ? 'actividad pendiente' : 'actividades pendientes'
+                  : `${pendingFulfillmentsToday} ${
+                      pendingFulfillmentsToday === 1
+                        ? 'cumplimiento pendiente'
+                        : 'cumplimientos pendientes'
                     }`}
                 {todayModel.completedToday.length > 0 &&
-                  ` · ${todayModel.completedToday.length} realizada${
+                  ` · ${todayModel.completedToday.length} realizado${
                     todayModel.completedToday.length === 1 ? '' : 's'
                   }`}
               </p>
@@ -370,13 +458,44 @@ export function AgendaSection({
             <div className="exec-group-header">
               <h2>Para hacer hoy</h2>
               <span className="group-count-pill tone-neutral">
-                {todayModel.todayTasks.length}
+                {pendingFulfillmentsToday} {pendingFulfillmentsToday === 1 ? 'pendiente' : 'pendientes'}
               </span>
             </div>
             {todayModel.todayTasks.length === 0 ? (
               <div className="today-done-banner">
                 <CheckCircle2 size={20} />
-                <span>No quedan actividades pendientes programadas para hoy.</span>
+                <span>No quedan cumplimientos pendientes programados para hoy.</span>
+              </div>
+            ) : todayCategoryBuckets ? (
+              <div className="today-categorized-list">
+                {todayCategoryBuckets.map(bucket => (
+                  <div key={bucket.name} className="today-cat-block">
+                    <div className="today-cat-header">
+                      <span className="today-cat-title">{bucket.name}</span>
+                      <span className="today-cat-count">
+                        {bucket.pendingCount} {bucket.pendingCount === 1 ? 'pendiente' : 'pendientes'}
+                      </span>
+                    </div>
+                    <div className="exec-group-list">
+                      {bucket.items.map(group => (
+                        <GroupedExecutionCard
+                          key={group.activityId}
+                          group={group}
+                          today={today}
+                          currentUser={currentUser}
+                          onChangeStatus={onChangeStatus}
+                          onChangeExecutor={onChangeExecutor}
+                          onReschedule={onRescheduleExecution}
+                          onSaveObservation={onSaveObservation}
+                          onSelect={onSelectExecution}
+                          onEditActivity={onEditActivity}
+                          onDuplicateActivity={onDuplicateActivity}
+                          onTogglePauseActivity={onTogglePauseActivity}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="exec-group-list">

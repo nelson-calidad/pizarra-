@@ -2955,7 +2955,10 @@
 
 .grouped-subrows-list {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: stretch;
+  border-top: 1px solid #f1f5f9;
 }
 
 .exec-row {
@@ -2974,21 +2977,91 @@
   background: var(--surface-hover);
 }
 
-/* Subfilas de cumplimiento por sucursal dentro de la card unificada */
+/* Subfilas de cumplimiento por sucursal en la misma línea horizontal */
 .exec-row.exec-row-sub {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   border-left: 0 !important;
-  border-bottom: 1px solid #f1f5f9;
-  padding: 9px 16px;
+  border-bottom: 0 !important;
+  border-right: 1px solid #f1f5f9;
+  padding: 7px 12px;
   background: transparent !important;
   transition: background var(--transition-fast);
 }
 
 .exec-row.exec-row-sub:last-child {
-  border-bottom: 0;
+  border-right: 0;
 }
 
 .exec-row.exec-row-sub:hover {
   background: #f8fafc !important;
+}
+
+.exec-row.exec-row-sub .exec-row-main {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.exec-row.exec-row-sub .exec-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.exec-row.exec-row-sub .exec-title-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.subrow-sep {
+  color: #94a3b8;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+}
+
+@media (max-width: 560px) {
+  .exec-row.exec-row-sub {
+    flex: 1 1 100%;
+    border-right: 0;
+    border-bottom: 1px solid #f1f5f9 !important;
+  }
+  .exec-row.exec-row-sub:last-child {
+    border-bottom: 0 !important;
+  }
+}
+
+/* Encabezados discretos para agrupación visual inteligente por categorías */
+.today-cat-block {
+  margin-bottom: 14px;
+}
+
+.today-cat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 6px 6px;
+}
+
+.today-cat-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.today-cat-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
 }
 
 /* Colores por estado para filas individuales */
@@ -3422,7 +3495,9 @@
   position: absolute;
   right: 0;
   top: 34px;
-  width: 220px;
+  min-width: 240px;
+  width: max-content;
+  max-width: 290px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

@@ -166,6 +166,8 @@ export function ExecutionRow({
               {execution.branch === 'AMBAS' ? 'Jujuy y Salta' : BRANCH_LABEL[execution.branch]}
             </span>
 
+            {hideTitle && <span className="subrow-sep">·</span>}
+
             {!hideTitle && mode === 'CONJUNTA' && (
               <span className="exec-mode-pill mode-conjunta" title="Modalidad: Trabajo conjunto (RAC + Analista)">
                 <Users size={11} /> Conjunta
@@ -288,18 +290,56 @@ export function ExecutionRow({
                       handleQuickComplete()
                     }}
                   >
-                    <RotateCcw size={13} /> Deshacer cumplimiento
+                    <RotateCcw size={13} /> Deshacer cumplimiento (volver a pendiente)
                   </button>
+                )}
+
+                {!isDone && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMenu(false)
+                        onChangeExecutor(execution, 'RAC')
+                        onChangeStatus(execution, 'REALIZADA', { completedBy: 'RAC', executor: 'RAC' })
+                      }}
+                    >
+                      <Check size={13} /> Registrar realizado por RAC
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMenu(false)
+                        onChangeExecutor(execution, 'ANALISTA')
+                        onChangeStatus(execution, 'REALIZADA', { completedBy: 'ANALISTA', executor: 'ANALISTA' })
+                      }}
+                    >
+                      <Check size={13} /> Registrar realizado por Analista
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMenu(false)
+                        const patch = toggleJointCompletion(execution, currentUser, ['RAC', 'ANALISTA'])
+                        onChangeStatus(execution, patch.status || 'REALIZADA', patch)
+                      }}
+                      title="Registrar que trabajaron juntos RAC y Analista"
+                    >
+                      <Users size={13} /> Registrar realizado por Ambos
+                    </button>
+                  </>
                 )}
 
                 <button
                   type="button"
                   onClick={() => {
                     setShowMenu(false)
-                    onSelect(execution)
+                    setShowNoteBox(true)
+                    setShowReschedule(false)
+                    setShowNotDoneBox(false)
                   }}
                 >
-                  <Clock size={13} /> Ver detalle e historial
+                  <MessageSquarePlus size={13} /> Agregar observación o evidencia
                 </button>
 
                 {!isDone && onReschedule && (
@@ -320,56 +360,11 @@ export function ExecutionRow({
                   type="button"
                   onClick={() => {
                     setShowMenu(false)
-                    setShowNoteBox(true)
-                    setShowReschedule(false)
-                    setShowNotDoneBox(false)
+                    onSelect(execution)
                   }}
                 >
-                  <MessageSquarePlus size={13} /> Observación o evidencia
+                  <Clock size={13} /> Consultar detalle e historial
                 </button>
-
-                {!isDone && (
-                  <div className="dropdown-sub-action">
-                    <span className="dropdown-sub-label">Asignar ejecución:</span>
-                    <div className="dropdown-role-buttons">
-                      <button
-                        type="button"
-                        className={execution.executor === 'RAC' ? 'active' : ''}
-                        onClick={() => {
-                          onChangeExecutor(execution, 'RAC')
-                          setShowMenu(false)
-                        }}
-                      >
-                        RAC
-                      </button>
-                      <button
-                        type="button"
-                        className={execution.executor === 'ANALISTA' ? 'active' : ''}
-                        onClick={() => {
-                          onChangeExecutor(execution, 'ANALISTA')
-                          setShowMenu(false)
-                        }}
-                      >
-                        Analista
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Acción secundaria para registrar que trabajaron Ambos */}
-                {!isDone && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMenu(false)
-                      const patch = toggleJointCompletion(execution, currentUser, ['RAC', 'ANALISTA'])
-                      onChangeStatus(execution, patch.status || 'REALIZADA', patch)
-                    }}
-                    title="Registrar que trabajaron juntos RAC y Analista"
-                  >
-                    <Users size={13} /> Realizado por Ambos (RAC + Analista)
-                  </button>
-                )}
 
                 {!isDone && execution.status !== 'NO_REALIZADA' && (
                   <button

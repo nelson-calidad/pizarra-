@@ -273,7 +273,7 @@ export function mergeWithPending<T extends { id: string }>(fresh: T[], local: T[
     out.push(pend.has(f.id) && localById.has(f.id) ? localById.get(f.id)! : f)
   }
   for (const l of local) {
-    if (!seen.has(l.id) && !dels.has(l.id)) {
+    if (!seen.has(l.id) && !dels.has(l.id) && pend.has(l.id)) {
       seen.add(l.id)
       out.push(l)
     }

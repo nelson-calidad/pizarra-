@@ -74,6 +74,10 @@ export function buildExecutions(
   for (const e of persisted) {
     const act = actById.get(e.activityId)
     if (!act) continue
+    // Descartar ejecuciones obsoletas de branch AMBAS cuando la actividad se divide por sucursal
+    if (act.branch === 'AMBAS' && act.splitBranches !== false && e.branch === 'AMBAS') {
+      continue
+    }
     const winStart = e.windowStart || computeWindowStart(act, e.dueDate)
     const overlapsWindow = winStart !== undefined && winStart <= to && e.dueDate >= from
     if ((e.dueDate >= from && e.dueDate <= to) || overlapsWindow) {

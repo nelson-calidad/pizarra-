@@ -69,12 +69,12 @@ function checkAuth_(p) {
     const ss = SpreadsheetApp.getActive();
     if (!ss) return false;
     const sh = ss.getSheetByName('CONFIG');
-    if (!sh || sh.getLastRow() < 2) return true; // sin configurar aún
+    if (!sh || sh.getLastRow() < 2) return false; // falta CONFIG o no tiene filas
     const rows = sh.getDataRange().getValues();
     const row = rows.find((r, i) => i > 0 && String(r[0]).trim().toUpperCase() === 'ACCESS_KEY');
-    if (!row) return true; // sin clave definida
+    if (!row) return false; // falta ACCESS_KEY en CONFIG
     const expected = String(row[1] || '').trim();
-    if (!expected) return true; // valor vacío en config
+    if (!expected) return false; // ACCESS_KEY está vacía
     const received = String(p.key || '').trim();
     return received === expected;
   } catch (err) {

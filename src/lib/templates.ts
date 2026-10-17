@@ -173,17 +173,6 @@ export const SUGGESTED_TEMPLATES: ActivityTemplate[] = [
     splitBranches: true,
     responsible: 'ANALISTA',
     category: 'Controles'
-  },
-  {
-    name: 'Seguimiento de Mystery Shopper',
-    description: 'Evaluación mensual de resultados y desvíos de cliente incógnito.',
-    frequency: 'MENSUAL',
-    interval: 1,
-    businessDaysOnly: false,
-    branch: 'AMBAS',
-    splitBranches: true,
-    responsible: 'RAC',
-    category: 'Controles'
   }
 ]
 

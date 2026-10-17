@@ -1,6 +1,7 @@
+import { Users, CheckCircle2, Check } from 'lucide-react'
 import type { Activity, Execution, ExecStatus, Role } from '../types'
 import { ExecutionRow } from './ExecutionRow'
-import { FREQ_LABEL, COMPLETION_MODE_SHORT } from '../lib/labels'
+import { describeRule } from '../lib/labels'
 import type { GroupedExecutionCard as GroupType } from '../lib/planner'
 
 type Props = {
@@ -32,48 +33,57 @@ export function GroupedExecutionCard({
   onDuplicateActivity,
   onTogglePauseActivity
 }: Props) {
-  // Si tiene un solo ítem (por ejemplo una sola sucursal o ambas consolidadas), mostrar la fila directa
-  if (group.items.length <= 1) {
-    const single = group.items[0]
-    if (!single) return null
-    return (
-      <ExecutionRow
-        execution={single}
-        activity={group.activity}
-        today={today}
-        currentUser={currentUser}
-        compact={compact}
-        onChangeStatus={onChangeStatus}
-        onChangeExecutor={onChangeExecutor}
-        onReschedule={onReschedule}
-        onSaveObservation={onSaveObservation}
-        onSelect={onSelect}
-        onEditActivity={onEditActivity}
-        onDuplicateActivity={onDuplicateActivity}
-        onTogglePauseActivity={onTogglePauseActivity}
-      />
-    )
+  if (!group.items || group.items.length === 0) return null
+
+  const act = group.activity
+  const mode = act?.completionMode || group.items[0]?.completionMode || 'CUALQUIERA'
+  const allCompleted = group.items.length > 0 && group.items.every(ex => ex.status === 'REALIZADA')
+
+  // Descripción legible de frecuencia o regla sin categorías concatenadas
+  const recurrenceSubtitle = act
+    ? describeRule(act)
+    : group.items[0]?.dueDate
+    ? `Fecha: ${group.items[0].dueDate}`
+    : ''
+
+  const handleHeaderClick = () => {
+    if (group.items[0]) {
+      onSelect(group.items[0])
+    }
   }
 
-  // Agrupamiento visual por actividad cuando ambas sucursales están en el mismo día
-  const act = group.activity
-  const mode = act?.completionMode || 'CUALQUIERA'
-
   return (
-    <div className="grouped-activity-card">
-      <div className="grouped-card-header">
-        <span className="grouped-card-title">{group.activityName}</span>
-        <div className="grouped-card-tags">
-          {act?.frequency && (
-            <span className="grouped-tag freq">{FREQ_LABEL[act.frequency]}</span>
-          )}
-          {mode !== 'CUALQUIERA' && (
-            <span className="grouped-tag mode">{COMPLETION_MODE_SHORT[mode]}</span>
-          )}
-          {act?.category && (
-            <span className="grouped-tag cat">{act.category}</span>
-          )}
+    <div className={`grouped-activity-card ${allCompleted ? 'is-card-completed' : ''}`}>
+      <div className="grouped-card-header" onClick={handleHeaderClick}>
+        <div className="grouped-card-header-left">
+          <h3 className="grouped-card-title">{group.activityName}</h3>
+          <div className="grouped-card-subline">
+            {recurrenceSubtitle && (
+              <span className="grouped-card-freq">{recurrenceSubtitle}</span>
+            )}
+
+            {mode === 'CONJUNTA' && (
+              <span className="grouped-mode-pill mode-conjunta" title="Modalidad: Trabajo conjunto (RAC + Analista)">
+                <Users size={11} /> RAC + Analista
+              </span>
+            )}
+
+            {mode === 'AMBOS_INDIVIDUAL' && (
+              <span className="grouped-mode-pill mode-ambos" title="Modalidad: Revisión individual por separado">
+                <CheckCircle2 size={11} /> Ambos individual
+              </span>
+            )}
+          </div>
         </div>
+
+        {allCompleted && (
+          <div className="grouped-card-header-right">
+            <span className="grouped-all-done-pill">
+              <Check size={12} strokeWidth={2.8} />
+              <span>Completada</span>
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="grouped-subrows-list">
@@ -100,4 +110,3 @@ export function GroupedExecutionCard({
     </div>
   )
 }
-

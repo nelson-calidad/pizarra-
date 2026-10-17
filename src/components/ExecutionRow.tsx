@@ -7,7 +7,7 @@ import {
 import type { Activity, Execution, ExecStatus, Role } from '../types'
 import { relativeLabel, shortDate } from '../lib/dates'
 import {
-  BRANCH_LABEL, BRANCH_SHORT, ROLE_LABEL, VISUAL_LABEL,
+  BRANCH_LABEL, BRANCH_SHORT, ROLE_LABEL,
   getDefaultCompletionLabel
 } from '../lib/labels'
 import {
@@ -134,7 +134,7 @@ export function ExecutionRow({
   return (
     <div className={`exec-row exec-visual-${v} ${compact || isDone ? 'exec-row-compact' : ''} ${hideTitle ? 'exec-row-sub' : ''}`}>
       <div className="exec-row-main">
-        {/* Acción principal de 1 clic */}
+        {/* Acción principal de 1 clic: casilla de verificación */}
         {mode !== 'AMBOS_INDIVIDUAL' && (
           <button
             type="button"
@@ -163,37 +163,46 @@ export function ExecutionRow({
               className={`branch-pill branch-${execution.branch.toLowerCase()}`}
               title={`Sucursal: ${BRANCH_LABEL[execution.branch]}`}
             >
-              {execution.branch === 'AMBAS' ? 'Ambas' : BRANCH_LABEL[execution.branch]}
+              {execution.branch === 'AMBAS' ? 'Jujuy y Salta' : BRANCH_LABEL[execution.branch]}
             </span>
 
-            {mode === 'CONJUNTA' && (
+            {!hideTitle && mode === 'CONJUNTA' && (
               <span className="exec-mode-pill mode-conjunta" title="Modalidad: Trabajo conjunto (RAC + Analista)">
                 <Users size={11} /> Conjunta
               </span>
             )}
 
-            {mode === 'AMBOS_INDIVIDUAL' && (
+            {!hideTitle && mode === 'AMBOS_INDIVIDUAL' && (
               <span className="exec-mode-pill mode-ambos" title="Modalidad: Revisión individual de ambos">
                 <CheckCircle2 size={11} /> Ambos indiv.
               </span>
             )}
 
-            {v !== 'pending' && v !== 'done' && (
-              <span className={`state-badge state-${v}`}>
-                {visualIcon(v)}
-                <span>{VISUAL_LABEL[v]}</span>
+            {/* Estado claro y ordenado: sin etiquetas redundantes */}
+            {isDone ? (
+              <span className="exec-status-text is-done">
+                ✓ {actionVerb} por {execution.completedBy ? ROLE_LABEL[execution.completedBy] : ROLE_LABEL[execution.executor]}
+                {completedTimeStr ? ` · ${completedTimeStr}` : ''}
+              </span>
+            ) : v === 'overdue' ? (
+              <span className="exec-status-text is-overdue">
+                <AlertTriangle size={12} strokeWidth={2.3} />
+                <span>Vencida{execution.dueDate ? ` (${shortDate(execution.dueDate)})` : ''}</span>
+              </span>
+            ) : v === 'progress' ? (
+              <span className="exec-status-text is-progress">
+                <Play size={11} strokeWidth={2.4} />
+                <span>En curso</span>
+              </span>
+            ) : (
+              <span className="exec-status-text is-pending">
+                Pendiente
               </span>
             )}
 
-            <span className={`exec-date-chip ${v === 'overdue' ? 'is-overdue' : ''}`}>
-              {dueBadgeText()}
-            </span>
-
-            {/* Metadato discreto de cumplimiento */}
-            {isDone && (
-              <span className="exec-done-meta">
-                ✓ {actionVerb} por {execution.completedBy ? ROLE_LABEL[execution.completedBy] : ROLE_LABEL[execution.executor]}
-                {completedTimeStr ? ` · ${completedTimeStr}` : ''}
+            {!hideTitle && execution.dueDate !== today && v !== 'overdue' && (
+              <span className="exec-date-chip">
+                {dueBadgeText()}
               </span>
             )}
 
@@ -257,33 +266,8 @@ export function ExecutionRow({
           )}
         </div>
 
-        {/* Acciones de la fila: Botón de acción directo + Menú discreto ··· */}
+        {/* Acciones secundarias: Menú discreto ··· */}
         <div className="exec-Controls">
-          {!isDone && mode !== 'AMBOS_INDIVIDUAL' && (
-            <button
-              type="button"
-              className="btn-action-verb"
-              onClick={handleQuickComplete}
-              title={`Marcar ${actionVerb} en 1 clic`}
-            >
-              <Check size={12} strokeWidth={2.4} />
-              <span>{actionVerb}</span>
-            </button>
-          )}
-
-          {isDone && (
-            <button
-              type="button"
-              className="btn-undo-action"
-              onClick={handleQuickComplete}
-              title="Deshacer cumplimiento"
-            >
-              <RotateCcw size={11} />
-              <span>Deshacer</span>
-            </button>
-          )}
-
-          {/* Menú de opciones secundarias (···) */}
           <div className="context-menu-wrap">
             <button
               type="button"
@@ -296,6 +280,18 @@ export function ExecutionRow({
 
             {showMenu && (
               <div className="context-dropdown" onMouseLeave={() => setShowMenu(false)}>
+                {isDone && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMenu(false)
+                      handleQuickComplete()
+                    }}
+                  >
+                    <RotateCcw size={13} /> Deshacer cumplimiento
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => {

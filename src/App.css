@@ -2845,6 +2845,117 @@
 .exec-group-list {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+}
+
+/* Card Unificada de Actividad (Hoy / Semana / Anteriores) */
+.grouped-activity-card {
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.grouped-activity-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.grouped-activity-card.is-card-completed {
+  background: #fbfcfd;
+  opacity: 0.92;
+}
+
+.grouped-card-header {
+  padding: 12px 16px 9px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  background: var(--surface, #ffffff);
+  border-bottom: 1px solid #f1f5f9;
+  transition: background var(--transition-fast);
+}
+
+.grouped-card-header:hover {
+  background: #f8fafc;
+}
+
+.grouped-card-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.grouped-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: #1f2937;
+  letter-spacing: -0.01em;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+.grouped-activity-card.is-card-completed .grouped-card-title {
+  color: #64748b;
+}
+
+.grouped-card-subline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.grouped-card-freq {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.grouped-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+
+.grouped-mode-pill.mode-conjunta {
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.grouped-mode-pill.mode-ambos {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.grouped-all-done-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 12px;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+  flex-shrink: 0;
+}
+
+.grouped-subrows-list {
+  display: flex;
+  flex-direction: column;
 }
 
 .exec-row {
@@ -2863,8 +2974,24 @@
   background: var(--surface-hover);
 }
 
-/* Colores por estado (Punto 11):
-   Gris: pendiente | Azul: en curso | Amarillo: próximo a vencer | Rojo: vencido | Verde: realizado | Propio: no realizada */
+/* Subfilas de cumplimiento por sucursal dentro de la card unificada */
+.exec-row.exec-row-sub {
+  border-left: 0 !important;
+  border-bottom: 1px solid #f1f5f9;
+  padding: 9px 16px;
+  background: transparent !important;
+  transition: background var(--transition-fast);
+}
+
+.exec-row.exec-row-sub:last-child {
+  border-bottom: 0;
+}
+
+.exec-row.exec-row-sub:hover {
+  background: #f8fafc !important;
+}
+
+/* Colores por estado para filas individuales */
 .exec-row.exec-visual-pending {
   border-left-color: #94a3b8;
 }
@@ -2888,22 +3015,22 @@
 
 .exec-row-main {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
 }
 
 .exec-check-btn {
-  width: 22px;
-  height: 22px;
-  margin-top: 2px;
-  border-radius: 6px;
-  border: 2px solid #94a3b8;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1.5px solid #cbd5e1;
   background: #ffffff;
   display: grid;
   place-items: center;
   color: #ffffff;
   flex-shrink: 0;
   transition: all var(--transition-fast);
+  cursor: pointer;
 }
 
 .exec-check-btn:hover {
@@ -2911,17 +3038,15 @@
   background: #ecfdf5;
 }
 
+.exec-check-btn.is-completed,
 .exec-check-btn.status-done {
   background: #10b981;
   border-color: #10b981;
+  color: #ffffff;
 }
 
 .exec-check-btn.status-overdue {
   border-color: #ef4444;
-}
-
-.exec-check-btn.status-soon {
-  border-color: #f59e0b;
 }
 
 .exec-check-btn.status-progress {
@@ -2931,6 +3056,34 @@
 .exec-check-btn.status-notdone {
   border-color: #6d28d9;
   background: #ede9fe;
+}
+
+/* Texto de estado limpio y profesional */
+.exec-status-text {
+  font-size: 12.5px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.exec-status-text.is-pending {
+  color: #64748b;
+}
+
+.exec-status-text.is-done {
+  color: #059669;
+  font-weight: 550;
+}
+
+.exec-status-text.is-overdue {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.exec-status-text.is-progress {
+  color: #2563eb;
+  font-weight: 600;
 }
 
 .exec-info {
@@ -3007,25 +3160,36 @@
 .branch-pill {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
-  border-radius: var(--radius-xs);
+  padding: 2px 7px;
+  border-radius: var(--radius-xs, 4px);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
 }
 
 .branch-jujuy {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
 }
 
 .branch-salta {
-  background: #ffedd5;
+  background: #fff7ed;
   color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+
+.branch-general {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
 }
 
 .branch-ambas {
-  background: #e0e7ff;
-  color: #4338ca;
+  background: #f5f3ff;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
 }
 
 .exec-category-tag {
@@ -3078,6 +3242,61 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+/* Confirmación individual de ambos */
+.exec-dual-confirm-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.dual-confirm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-xs, 4px);
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--surface, #ffffff);
+  color: var(--text-secondary, #475569);
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.dual-confirm-btn:hover {
+  border-color: var(--accent, #5e54f0);
+  background: var(--surface-hover, #f8fafc);
+}
+
+.dual-confirm-btn.is-confirmed {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+  font-weight: 600;
+}
+
+.dual-confirm-btn .dot-pending {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.dual-confirm-btn small {
+  font-size: 11px;
+  color: #64748b;
+  margin-left: 2px;
+}
+
+.dual-progress-tag {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748b;
 }
 
 .obs-link {

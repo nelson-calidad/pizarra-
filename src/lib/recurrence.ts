@@ -47,7 +47,7 @@ export function executionId(activityId: string, period: string, branch: BranchSc
 /** Sucursales en las que se registra la actividad. */
 export function activityBranches(a: Pick<Activity, 'branch' | 'splitBranches'>, eventBranch?: BranchScope): BranchScope[] {
   let base: BranchScope[] =
-    a.branch === 'AMBAS' ? (a.splitBranches ? ['JUJUY', 'SALTA'] : ['AMBAS']) : [a.branch]
+    a.branch === 'AMBAS' ? (a.splitBranches !== false ? ['JUJUY', 'SALTA'] : ['AMBAS']) : [a.branch]
   if (eventBranch && eventBranch !== 'AMBAS') {
     if (a.branch !== 'AMBAS' && a.branch !== eventBranch) return []
     base = [eventBranch as Branch]

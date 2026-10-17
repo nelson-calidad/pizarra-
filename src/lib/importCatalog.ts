@@ -92,6 +92,9 @@ function normalizeBranch(
 ): { branch: BranchScope; splitBranches: boolean } {
   if (!bStr) return { branch: 'AMBAS', splitBranches: explicitSplit !== undefined ? explicitSplit : true }
   const b = bStr.toUpperCase().trim()
+  if (b.includes('GENERAL')) {
+    return { branch: 'GENERAL', splitBranches: false }
+  }
   if (b.includes('JUJUY') && !b.includes('SALTA') && !b.includes('AMBAS')) {
     return { branch: 'JUJUY', splitBranches: false }
   }
@@ -101,8 +104,8 @@ function normalizeBranch(
   if (explicitSplit !== undefined) {
     return { branch: 'AMBAS', splitBranches: explicitSplit }
   }
-  const isSeparated = b.includes('SEPARADO') || b.includes('INDEPENDIENTE') || b.includes('(SEPARADO)')
-  return { branch: 'AMBAS', splitBranches: isSeparated }
+  // Para AMBAS, siempre por defecto cumplimientos independientes para Jujuy y Salta
+  return { branch: 'AMBAS', splitBranches: true }
 }
 
 /**

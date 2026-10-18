@@ -2854,7 +2854,8 @@
   border: 1px solid var(--border, #e2e8f0);
   border-radius: var(--radius-md, 10px);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
@@ -2877,6 +2878,8 @@
   cursor: pointer;
   background: var(--surface, #ffffff);
   border-bottom: 1px solid #f1f5f9;
+  border-top-left-radius: var(--radius-md, 10px);
+  border-top-right-radius: var(--radius-md, 10px);
   transition: background var(--transition-fast);
 }
 
@@ -2959,6 +2962,10 @@
   flex-wrap: wrap;
   align-items: stretch;
   border-top: 1px solid #f1f5f9;
+  border-bottom-left-radius: var(--radius-md, 10px);
+  border-bottom-right-radius: var(--radius-md, 10px);
+  overflow: visible;
+  position: relative;
 }
 
 .exec-row {
@@ -2967,6 +2974,7 @@
   border-left: 4px solid #cbd5e1;
   transition: background var(--transition-fast);
   position: relative;
+  overflow: visible;
 }
 
 .exec-row:last-child {
@@ -2989,6 +2997,8 @@
   border-right: 1px solid #f1f5f9;
   padding: 7px 12px;
   background: transparent !important;
+  position: relative;
+  overflow: visible;
   transition: background var(--transition-fast);
 }
 
@@ -3491,38 +3501,64 @@
   position: relative;
 }
 
+.context-menu-wrap.is-open {
+  z-index: 95;
+}
+
+.context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  background: transparent;
+}
+
 .context-dropdown {
   position: absolute;
   right: 0;
-  top: 34px;
-  min-width: 240px;
+  top: calc(100% + 4px);
+  min-width: 220px;
   width: max-content;
-  max-width: 290px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
+  max-width: min(290px, calc(100vw - 32px));
+  background: #ffffff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
   padding: 5px;
-  z-index: 30;
+  z-index: 100;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
 .context-dropdown button {
-  padding: 8px 10px;
-  border-radius: var(--radius-xs);
+  padding: 7px 10px;
+  border-radius: var(--radius-xs, 4px);
   font-size: 12.5px;
   font-weight: 500;
-  color: var(--text);
+  color: var(--text, #1e293b);
   display: flex;
   align-items: center;
   gap: 8px;
   text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.1s ease;
 }
 
 .context-dropdown button:hover {
-  background: var(--surface-active);
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.context-dropdown button.dropdown-item-danger {
+  color: #dc2626;
+}
+
+.context-dropdown button.dropdown-item-danger:hover {
+  background: #fef2f2;
+  color: #b91c1c;
 }
 
 /* Cajón inline para observación rápida o motivo de no realización */

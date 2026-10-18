@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   Check, Clock, AlertTriangle, Play, Ban, RotateCcw, MessageSquarePlus,
-  ExternalLink, MoreHorizontal, Edit3, Copy, PauseCircle, Calendar, Users,
+  ExternalLink, MoreHorizontal, Calendar, Users,
   CheckCircle2, Eye, Send, ClipboardCheck, CheckSquare
 } from 'lucide-react'
 import type { Activity, Execution, ExecStatus, Role } from '../types'
@@ -73,13 +73,9 @@ export function ExecutionRow({
   compact = false,
   hideTitle = false,
   onChangeStatus,
-  onChangeExecutor,
   onReschedule,
   onSaveObservation,
-  onSelect,
-  onEditActivity,
-  onDuplicateActivity,
-  onTogglePauseActivity
+  onSelect
 }: Props) {
   const v = visualState(execution, today, leadDaysFor(activity), activity)
   const [showNoteBox, setShowNoteBox] = useState(false)
@@ -284,151 +280,146 @@ export function ExecutionRow({
 
         {/* Acciones secundarias: Menú discreto ··· */}
         <div className="exec-Controls">
-          <div className="context-menu-wrap">
+          <div className={`context-menu-wrap ${showMenu ? 'is-open' : ''}`}>
             <button
               type="button"
               className="btn-exec-icon"
-              onClick={() => setShowMenu(m => !m)}
+              onClick={e => {
+                e.stopPropagation()
+                setShowMenu(m => !m)
+              }}
               title="Más opciones"
+              aria-label="Más opciones"
             >
               <MoreHorizontal size={14} />
             </button>
 
             {showMenu && (
-              <div className="context-dropdown" onMouseLeave={() => setShowMenu(false)}>
-                {isDone && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMenu(false)
-                      handleQuickComplete()
-                    }}
-                  >
-                    <RotateCcw size={13} /> Deshacer cumplimiento (volver a pendiente)
-                  </button>
-                )}
-
-                {!isDone && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowMenu(false)
-                        onChangeExecutor(execution, 'RAC')
-                        onChangeStatus(execution, 'REALIZADA', { completedBy: 'RAC', executor: 'RAC' })
-                      }}
-                    >
-                      <Check size={13} /> Registrar realizado por RAC
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowMenu(false)
-                        onChangeExecutor(execution, 'ANALISTA')
-                        onChangeStatus(execution, 'REALIZADA', { completedBy: 'ANALISTA', executor: 'ANALISTA' })
-                      }}
-                    >
-                      <Check size={13} /> Registrar realizado por Analista
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowMenu(false)
-                        const patch = toggleJointCompletion(execution, currentUser, ['RAC', 'ANALISTA'])
-                        onChangeStatus(execution, patch.status || 'REALIZADA', patch)
-                      }}
-                      title="Registrar que trabajaron juntos RAC y Analista"
-                    >
-                      <Users size={13} /> Registrar realizado por Ambos
-                    </button>
-                  </>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
+              <>
+                <div
+                  className="context-menu-backdrop"
+                  onClick={e => {
+                    e.stopPropagation()
                     setShowMenu(false)
-                    setShowNoteBox(true)
-                    setShowReschedule(false)
-                    setShowNotDoneBox(false)
                   }}
+                />
+                <div
+                  className="context-dropdown"
+                  onClick={e => e.stopPropagation()}
                 >
-                  <MessageSquarePlus size={13} /> Agregar observación o evidencia
-                </button>
+                  {isDone ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMenu(false)
+                          handleQuickComplete()
+                        }}
+                      >
+                        <RotateCcw size={13} />
+                        <span>Deshacer cumplimiento</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMenu(false)
+                          setShowNoteBox(true)
+                          setShowReschedule(false)
+                          setShowNotDoneBox(false)
+                        }}
+                      >
+                        <MessageSquarePlus size={13} />
+                        <span>Agregar observación o evidencia</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMenu(false)
+                          onSelect(execution)
+                        }}
+                      >
+                        <Clock size={13} />
+                        <span>Ver detalle e historial</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {/* Registrar participación conjunta cuando corresponda */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMenu(false)
+                          const patch = toggleJointCompletion(execution, currentUser, ['RAC', 'ANALISTA'])
+                          onChangeStatus(execution, patch.status || 'REALIZADA', patch)
+                        }}
+                        title="Registrar que trabajaron juntos RAC y Analista"
+                      >
+                        <Users size={13} />
+                        <span>Registrar participación conjunta</span>
+                      </button>
 
-                {!isDone && onReschedule && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMenu(false)
-                      setShowReschedule(true)
-                      setShowNoteBox(false)
-                      setShowNotDoneBox(false)
-                    }}
-                  >
-                    <Calendar size={13} /> Reprogramar fecha
-                  </button>
-                )}
+                      {/* Agregar observación o evidencia */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMenu(false)
+                          setShowNoteBox(true)
+                          setShowReschedule(false)
+                          setShowNotDoneBox(false)
+                        }}
+                      >
+                        <MessageSquarePlus size={13} />
+                        <span>Agregar observación o evidencia</span>
+                      </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowMenu(false)
-                    onSelect(execution)
-                  }}
-                >
-                  <Clock size={13} /> Consultar detalle e historial
-                </button>
+                      {/* Reprogramar fecha */}
+                      {onReschedule && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowMenu(false)
+                            setShowReschedule(true)
+                            setShowNoteBox(false)
+                            setShowNotDoneBox(false)
+                          }}
+                        >
+                          <Calendar size={13} />
+                          <span>Reprogramar fecha</span>
+                        </button>
+                      )}
 
-                {!isDone && execution.status !== 'NO_REALIZADA' && (
-                  <button
-                    type="button"
-                    className="dropdown-item-danger"
-                    onClick={() => {
-                      setShowMenu(false)
-                      setShowNotDoneBox(true)
-                    }}
-                  >
-                    <Ban size={13} /> Marcar no realizada
-                  </button>
-                )}
+                      {/* Marcar como no realizada */}
+                      {execution.status !== 'NO_REALIZADA' && (
+                        <button
+                          type="button"
+                          className="dropdown-item-danger"
+                          onClick={() => {
+                            setShowMenu(false)
+                            setShowNotDoneBox(true)
+                            setShowNoteBox(false)
+                            setShowReschedule(false)
+                          }}
+                        >
+                          <Ban size={13} />
+                          <span>Marcar como no realizada</span>
+                        </button>
+                      )}
 
-                {activity && onEditActivity && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMenu(false)
-                      onEditActivity(activity)
-                    }}
-                  >
-                    <Edit3 size={13} /> Editar catálogo
-                  </button>
-                )}
-
-                {activity && onDuplicateActivity && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMenu(false)
-                      onDuplicateActivity(activity)
-                    }}
-                  >
-                    <Copy size={13} /> Duplicar actividad
-                  </button>
-                )}
-
-                {activity && onTogglePauseActivity && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMenu(false)
-                      onTogglePauseActivity(activity)
-                    }}
-                  >
-                    <PauseCircle size={13} /> {activity.state === 'PAUSADA' ? 'Reactivar' : 'Pausar actividad'}
-                  </button>
-                )}
-              </div>
+                      {/* Ver detalle e historial */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMenu(false)
+                          onSelect(execution)
+                        }}
+                      >
+                        <Clock size={13} />
+                        <span>Ver detalle e historial</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>

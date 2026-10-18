@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   LayoutGrid, CalendarDays, Search, Plus, Settings, X,
   User, Users, StickyNote, CalendarClock, LogOut
@@ -11,7 +11,7 @@ import type {
 import {
   enqueue, fetchNotes, fetchPeople, fetchPlanner, getSyncSnapshot,
   mergeWithPending, retryNow, syncListeners, toSheet, type SyncSnapshot,
-  getAuthUser, getSessionToken, logout, checkSession
+  getAuthUser, getSessionToken, logout, checkSession, syncSuccessListeners
 } from './services/sheetsApi'
 import {
   activityToSheet, eventToSheet, executionToSheet
@@ -165,52 +165,123 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [activities, executions, events, today])
 
-  // Sincronización periódica con Google Sheets sin pisar cambios locales pendientes
-  useEffect(() => {
-    const reload = async () => {
-      try {
-        const [freshNotes, freshPeople, freshPlanner] = await Promise.all([
-          fetchNotes().catch(() => null),
-          fetchPeople().catch(() => null),
-          fetchPlanner().catch(() => null)
-        ])
-        if (freshNotes && freshNotes.length > 0) {
-          setNotes(local => mergeWithPending(freshNotes, local))
+  // Estado de carga inicial remota (evita mostrar la agenda vacía antes de conectar)
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(() => activities.length === 0)
+  const isReloadingPlannerRef = useRef(false)
+  const lastReloadPlannerTimeRef = useRef(0)
+  const isReloadingSecondaryRef = useRef(false)
+
+  // Prioridad 1: Recarga rápida de Agenda (Planner: actividades + ejecuciones + eventos)
+  const reloadPlanner = useCallback(async (force = false) => {
+    if (isReloadingPlannerRef.current && !force) return
+    const now = Date.now()
+    if (!force && now - lastReloadPlannerTimeRef.current < 2500) return
+
+    isReloadingPlannerRef.current = true
+    try {
+      const freshPlanner = await fetchPlanner()
+      if (freshPlanner) {
+        if (freshPlanner.activities.length > 0) {
+          setActivities(local => deduplicateActivities(mergeWithPending(freshPlanner.activities, local)))
         }
-        if (freshPeople && freshPeople.length > 0) {
-          setPeople(prev => {
-            const set = new Set([...BASE_PEOPLE, ...prev, ...freshPeople.map(x => x.name)])
-            return Array.from(set)
-          })
+        if (freshPlanner.executions.length > 0) {
+          setExecutions(local => mergeWithPending(freshPlanner.executions, local))
         }
-        if (freshPlanner) {
-          if (freshPlanner.activities.length > 0) {
-            setActivities(local => deduplicateActivities(mergeWithPending(freshPlanner.activities, local)))
-          }
-          if (freshPlanner.executions.length > 0) {
-            setExecutions(local => mergeWithPending(freshPlanner.executions, local))
-          }
-          if (freshPlanner.events.length > 0) {
-            setEvents(local => mergeWithPending(freshPlanner.events, local))
-          }
+        if (freshPlanner.events.length > 0) {
+          setEvents(local => mergeWithPending(freshPlanner.events, local))
         }
-      } catch {
-        // Silencioso; el estado offline/error lo maneja sheetsApi
       }
-    }
-    void reload()
-    const onFocus = () => {
-      if (document.visibilityState === 'visible') void reload()
-    }
-    document.addEventListener('visibilitychange', onFocus)
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') void reload()
-    }, 30000)
-    return () => {
-      document.removeEventListener('visibilitychange', onFocus)
-      clearInterval(timer)
+      lastReloadPlannerTimeRef.current = Date.now()
+    } catch {
+      // Silencioso; el estado de conexión lo gestiona sheetsApi
+    } finally {
+      isReloadingPlannerRef.current = false
+      setIsInitialLoading(false)
     }
   }, [])
+
+  // Prioridad 2: Recarga secundaria asíncrona (Notas y Personas) sin bloquear Agenda
+  const reloadSecondaryData = useCallback(async () => {
+    if (isReloadingSecondaryRef.current) return
+    isReloadingSecondaryRef.current = true
+    try {
+      const [freshNotes, freshPeople] = await Promise.all([
+        fetchNotes().catch(() => null),
+        fetchPeople().catch(() => null)
+      ])
+      if (freshNotes && freshNotes.length > 0) {
+        setNotes(local => mergeWithPending(freshNotes, local))
+      }
+      if (freshPeople && freshPeople.length > 0) {
+        setPeople(prev => {
+          const set = new Set([...BASE_PEOPLE, ...prev, ...freshPeople.map(x => x.name)])
+          return Array.from(set)
+        })
+      }
+    } catch {
+      // Silencioso
+    } finally {
+      isReloadingSecondaryRef.current = false
+    }
+  }, [])
+
+  // 1. Carga inmediata al autenticarse o iniciar la app
+  useEffect(() => {
+    if (!isAuthenticated) return
+    void reloadPlanner(true).then(() => {
+      void reloadSecondaryData()
+    })
+  }, [isAuthenticated, reloadPlanner, reloadSecondaryData])
+
+  // 2. Sincronización rápida entre dispositivos (cada 12s) solo cuando la pestaña esté visible
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void reloadPlanner()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void reloadPlanner()
+      }
+    }, 12000)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+      clearInterval(timer)
+    }
+  }, [isAuthenticated, reloadPlanner])
+
+  // 3. Actualización tras operaciones confirmadas en Sheets (para recibir cambios del otro operador)
+  useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    const onSyncSuccess = () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        if (document.visibilityState === 'visible') {
+          void reloadPlanner()
+        }
+      }, 1500)
+    }
+    syncSuccessListeners.add(onSyncSuccess)
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      syncSuccessListeners.delete(onSyncSuccess)
+    }
+  }, [reloadPlanner])
+
+  // 4. Si el usuario abre Pizarra, cargar notas frescas
+  useEffect(() => {
+    if (section === 'board' && isAuthenticated) {
+      void reloadSecondaryData()
+    }
+  }, [section, isAuthenticated, reloadSecondaryData])
 
   // Atajos de teclado
   useEffect(() => {
@@ -912,6 +983,7 @@ export default function App() {
               onOpenEvents={() => setEventsOpen(true)}
               onQuickCreateTemplate={quickCreateFromTemplate}
               onImportActivities={handleImportActivities}
+              isLoading={isInitialLoading}
             />
           )}
         </div>

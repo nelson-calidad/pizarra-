@@ -284,16 +284,11 @@ function route_(p, isWrite) {
     // ETIQUETAS
     if (a === 'getTags') return { success: true, data: readAll_('ETIQUETAS') };
 
-    // PLANIFICADOR DE CALIDAD (ACTIVIDADES + EJECUCIONES + EVENTOS)
+    // PLANIFICADOR DE CALIDAD (ACTIVIDADES + EJECUCIONES + EVENTOS - Lectura rápida unificada)
     if (a === 'getPlanner') {
-      ensurePlannerSheets_();
       return {
         success: true,
-        data: {
-          activities: readAll_('ACTIVIDADES'),
-          executions: readAll_('EJECUCIONES'),
-          events: readAll_('EVENTOS')
-        }
+        data: getPlannerFast_()
       };
     }
 
@@ -358,6 +353,43 @@ function setupSpreadsheet() {
   return created.length ? created : ['Sin cambios'];
 }
 
+function getPlannerFast_() {
+  const ss = SpreadsheetApp.getActive();
+  const tz = ss.getSpreadsheetTimeZone() || 'America/Argentina/Jujuy';
+  return {
+    activities: readSheetDirect_(ss, 'ACTIVIDADES', tz),
+    executions: readSheetDirect_(ss, 'EJECUCIONES', tz),
+    events: readSheetDirect_(ss, 'EVENTOS', tz)
+  };
+}
+
+function readSheetDirect_(ss, name, tz) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) {
+    if (HEADERS[name]) {
+      sh = ss.insertSheet(name);
+      sh.appendRow(HEADERS[name]);
+    }
+    return [];
+  }
+  const rows = sh.getDataRange().getValues();
+  if (rows.length < 2) return [];
+  const headers = rows[0].map(String);
+  return rows.slice(1).map(row =>
+    headers.reduce((obj, key, i) => {
+      const val = row[i];
+      if (val instanceof Date) {
+        obj[key] = key.indexOf('FECHA') === 0
+          ? Utilities.formatDate(val, tz, 'yyyy-MM-dd')
+          : val.toISOString();
+      } else {
+        obj[key] = val;
+      }
+      return obj;
+    }, {})
+  );
+}
+
 function ensurePlannerSheets_() {
   const s = SpreadsheetApp.getActive();
   ['ACTIVIDADES', 'EJECUCIONES', 'EVENTOS'].forEach(name => {
@@ -365,8 +397,6 @@ function ensurePlannerSheets_() {
     if (!sh) {
       sh = s.insertSheet(name);
       sh.appendRow(HEADERS[name]);
-    } else {
-      ensureSheetHeaders_(sh, HEADERS[name]);
     }
   });
 }

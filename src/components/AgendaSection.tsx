@@ -51,6 +51,7 @@ type Props = {
   onOpenEvents: () => void
   onQuickCreateTemplate: (tpl: ActivityTemplate) => void
   onImportActivities: (acts: Activity[]) => void
+  isLoading?: boolean
 }
 
 export function AgendaSection({
@@ -78,7 +79,8 @@ export function AgendaSection({
   onDeleteActivity,
   onOpenEvents,
   onQuickCreateTemplate,
-  onImportActivities
+  onImportActivities,
+  isLoading = false
 }: Props) {
   // Vista inicial de Agenda: HOY (Punto 3)
   const [agendaView, setAgendaView] = useState<AgendaView>('today')
@@ -417,6 +419,14 @@ export function AgendaSection({
           onOpenImport={() => setImportOpen(true)}
           onClose={() => setShowCatalog(false)}
         />
+      ) : isLoading && activeActivities.length === 0 ? (
+        <div className="agenda-loading-screen" role="status" aria-live="polite">
+          <div className="agenda-loading-card">
+            <div className="spinner-subtle" />
+            <span className="agenda-loading-title">Cargando actividades…</span>
+            <span className="agenda-loading-sub">Sincronizando con Google Sheets</span>
+          </div>
+        </div>
       ) : activeActivities.length === 0 && persistedExecutions.length === 0 ? (
         <OnboardingEmpty
           onOpenNewActivity={onOpenNewActivity}

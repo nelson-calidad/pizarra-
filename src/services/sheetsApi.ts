@@ -288,10 +288,13 @@ export async function flushQueue(): Promise<void> {
   }
   if (!queue.length && !failed.length && !offline && !authFailed) {
     lastConfirmedAt = Date.now()
+    syncSuccessListeners.forEach(fn => { try { fn() } catch (_) {} })
   }
   flushing = false
   notify()
 }
+
+export const syncSuccessListeners: Set<() => void> = new Set()
 
 export function enqueue(action: string, id?: string, data?: unknown) {
   if (!isRemoteEnabled()) return
@@ -379,7 +382,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('online', () => retryNow())
   window.addEventListener('offline', () => { offline = true; notify() })
   // Reintento periódico mientras haya cambios en cola.
-  setInterval(() => { if (queue.length && !flushing) void flushQueue() }, 30000)
+  setInterval(() => { if (queue.length && !flushing) void flushQueue() }, 10000)
 }
 
 // ---------------- Lecturas (utilizan POST body sin exponer secretos en URL) ----------------

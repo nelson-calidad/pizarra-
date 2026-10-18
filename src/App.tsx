@@ -18,7 +18,7 @@ import {
 } from './services/mappers'
 import { addDays, endOfMonth, startOfMonth, todayISO } from './lib/dates'
 import {
-  buildExecutions, deduplicateActivities, pendingMaterialization,
+  buildExecutions, deduplicateActivities, isHistoricalExecution, pendingMaterialization,
   reconcileAfterRuleChange, ruleChanged, statusPatch
 } from './lib/planner'
 import { ROLE_LABEL } from './lib/labels'
@@ -491,21 +491,39 @@ export default function App() {
     setActivities(list => list.map(a => (a.id === act.id ? next : a)))
     enqueue('upsertActivity', next.id, activityToSheet(next))
 
-    // Descartar de inmediato ejecuciones pendientes o no completadas de esta actividad
+    // Descartar de la cola operativa únicamente ejecuciones pendientes sin valor histórico
+    // Conservar intacto el historial: REALIZADA, NO_REALIZADA y observaciones
     const toRemove = executions.filter(
-      e => e.activityId === act.id && e.status !== 'REALIZADA' && !e.virtual
+      e => e.activityId === act.id && !e.virtual && !isHistoricalExecution(e)
     )
     setExecutions(list =>
-      list.filter(e => !(e.activityId === act.id && e.status !== 'REALIZADA'))
+      list.filter(e => !(e.activityId === act.id && !isHistoricalExecution(e)))
     )
     toRemove.forEach(e => enqueue('deleteExecution', e.id))
   }
 
   const reactivateActivity = (act: Activity) => {
     const updatedAt = new Date().toISOString()
-    const next: Activity = { ...act, state: 'ACTIVA', updatedAt }
+    const next: Activity = {
+      ...act,
+      state: 'ACTIVA',
+      effectiveFrom: today,
+      updatedAt
+    }
     setActivities(list => list.map(a => (a.id === act.id ? next : a)))
     enqueue('upsertActivity', next.id, activityToSheet(next))
+
+    // Evitar que se generen automáticamente vencimientos antiguos del período en que estuvo eliminada:
+    // descartar ejecuciones no realizadas anteriores a hoy que carezcan de valor histórico
+    const oldPendingToRemove = executions.filter(
+      e => e.activityId === act.id && e.dueDate < today && !isHistoricalExecution(e) && !e.virtual
+    )
+    if (oldPendingToRemove.length > 0) {
+      setExecutions(list =>
+        list.filter(e => !(e.activityId === act.id && e.dueDate < today && !isHistoricalExecution(e)))
+      )
+      oldPendingToRemove.forEach(e => enqueue('deleteExecution', e.id))
+    }
   }
 
   const upsertExecutionLocal = (ex: Execution, patch: Partial<Execution>) => {

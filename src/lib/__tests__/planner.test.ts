@@ -575,7 +575,7 @@ describe('Etapa 5: Vista Anteriores, Sucursales independientes y Cumplimiento si
     expect(patch.completedBy).toBe('ANALISTA')
   })
 
-  it('actividad INACTIVA (eliminada) descarta pendientes pero conserva historial REALIZADA', () => {
+  it('actividad INACTIVA (eliminada) descarta pendientes operativas pero conserva historial REALIZADA, NO_REALIZADA y observaciones', () => {
     const act = base({
       id: 'act-inactiva',
       name: 'Actividad Eliminada',
@@ -583,8 +583,8 @@ describe('Etapa 5: Vista Anteriores, Sucursales independientes y Cumplimiento si
       startDate: '2026-10-10'
     })
 
-    const pendingEx: Execution = {
-      id: 'ex-pending',
+    const pendingEmpty: Execution = {
+      id: 'ex-pending-clean',
       activityId: 'act-inactiva',
       dueDate: '2026-10-16',
       period: '2026-10-16',
@@ -592,6 +592,30 @@ describe('Etapa 5: Vista Anteriores, Sucursales independientes y Cumplimiento si
       executor: 'RAC',
       status: 'PENDIENTE',
       createdAt: '2026-10-16'
+    }
+
+    const notDoneEx: Execution = {
+      id: 'ex-not-done',
+      activityId: 'act-inactiva',
+      dueDate: '2026-10-12',
+      period: '2026-10-12',
+      branch: 'JUJUY',
+      executor: 'RAC',
+      status: 'NO_REALIZADA',
+      reason: 'Feriado provincial sin guardia',
+      createdAt: '2026-10-12'
+    }
+
+    const pendingWithNoteEx: Execution = {
+      id: 'ex-with-note',
+      activityId: 'act-inactiva',
+      dueDate: '2026-10-14',
+      period: '2026-10-14',
+      branch: 'JUJUY',
+      executor: 'RAC',
+      status: 'PENDIENTE',
+      note: 'Se inició contacto con cliente pero quedó en revisión',
+      createdAt: '2026-10-14'
     }
 
     const doneEx: Execution = {
@@ -606,18 +630,51 @@ describe('Etapa 5: Vista Anteriores, Sucursales independientes y Cumplimiento si
       createdAt: '2026-10-15'
     }
 
-    const res = buildExecutions([act], [pendingEx, doneEx], [], '2026-10-01', '2026-10-31')
+    const allPersisted = [pendingEmpty, notDoneEx, pendingWithNoteEx, doneEx]
+    const res = buildExecutions([act], allPersisted, [], '2026-10-01', '2026-10-31')
 
-    // La pendiente fue descartada
-    expect(res.some(e => e.id === 'ex-pending')).toBe(false)
-    // La realizada histórica fue preservada
+    // La pendiente limpia fue descartada
+    expect(res.some(e => e.id === 'ex-pending-clean')).toBe(false)
+    // El historial REALIZADA fue preservado
     expect(res.some(e => e.id === 'ex-done')).toBe(true)
+    // El registro NO_REALIZADA fue preservado
+    expect(res.some(e => e.id === 'ex-not-done')).toBe(true)
+    // El registro con observación fue preservado
+    expect(res.some(e => e.id === 'ex-with-note')).toBe(true)
 
-    // En la vista Hoy, no aparece la actividad eliminada
-    const todayRes = buildTodayView([act], [pendingEx, doneEx], [], '2026-10-16')
+    // En la vista Hoy, la actividad eliminada no genera pendientes operativos
+    const todayRes = buildTodayView([act], allPersisted, [], '2026-10-16')
     expect(todayRes.todayTasks.some(e => e.activityId === 'act-inactiva')).toBe(false)
+
+    // En la vista Backlog / Anteriores, la actividad eliminada no invade tareas vencidas pendientes
+    const backlogRes = buildBacklogView([act], allPersisted, [], '2026-10-16')
+    expect(backlogRes.overdueTasks.some(e => e.activityId === 'act-inactiva')).toBe(false)
+  })
+
+  it('al restaurar actividad con effectiveFrom = today, evita generar vencimientos antiguos del período eliminado', () => {
+    // Actividad diaria creada originalmente el 1 de octubre
+    const restoredAct = base({
+      id: 'act-diaria-restaurada',
+      name: 'Revisión Diaria',
+      frequency: 'DIARIA',
+      startDate: '2026-10-01',
+      state: 'ACTIVA',
+      // Restaurada hoy 16 de octubre:
+      effectiveFrom: '2026-10-16'
+    })
+
+    const today = '2026-10-16'
+    // Backlog busca hasta 90 días atrás: no debe generar ocurrencias de fechas anteriores a effectiveFrom
+    const backlog = buildBacklogView([restoredAct], [], [], today)
+    expect(backlog.overdueTasks.some(e => e.activityId === 'act-diaria-restaurada')).toBe(false)
+
+    // En buildExecutions, las ocurrencias virtuales solo se generan desde hoy en adelante
+    const execs = buildExecutions([restoredAct], [], [], '2026-10-01', '2026-10-16')
+    const oldOccurrences = execs.filter(e => e.activityId === 'act-diaria-restaurada' && e.dueDate < '2026-10-16')
+    expect(oldOccurrences.length).toBe(0)
   })
 })
+
 
 
 

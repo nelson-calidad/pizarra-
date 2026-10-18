@@ -23,6 +23,18 @@ export const DEFAULT_LEAD: Record<Frequency, number> = {
 
 export const isResolved = (s: ExecStatus) => s === 'REALIZADA' || s === 'NO_REALIZADA'
 
+/** Determina si una ejecución tiene valor histórico que debe preservarse intacto */
+export function isHistoricalExecution(e: Pick<Execution, 'status' | 'note' | 'evidence' | 'reason' | 'completedAt'>): boolean {
+  return (
+    e.status === 'REALIZADA' ||
+    e.status === 'NO_REALIZADA' ||
+    Boolean(e.note && e.note.trim()) ||
+    Boolean(e.evidence && e.evidence.trim()) ||
+    Boolean(e.reason && e.reason.trim()) ||
+    Boolean(e.completedAt)
+  )
+}
+
 export function leadDaysFor(a?: Pick<Activity, 'frequency' | 'leadDays' | 'flexible'>) {
   if (!a) return 2
   const n = Number(a.leadDays)
@@ -74,8 +86,8 @@ export function buildExecutions(
   for (const e of persisted) {
     const act = actById.get(e.activityId)
     if (!act) continue
-    // Si la actividad fue eliminada (INACTIVA), descartar ejecuciones no realizadas (conservar solo el historial completado)
-    if (act.state === 'INACTIVA' && e.status !== 'REALIZADA') {
+    // Si la actividad fue eliminada (INACTIVA), conservar solo el historial (REALIZADA, NO_REALIZADA, observaciones)
+    if (act.state === 'INACTIVA' && !isHistoricalExecution(e)) {
       continue
     }
     // Descartar ejecuciones obsoletas de branch AMBAS cuando la actividad se divide por sucursal
@@ -359,6 +371,11 @@ export function buildTodayView(
       continue
     }
 
+    // Las actividades eliminadas (INACTIVA) no deben figurar como pendientes operativas de hoy ni vencidas
+    if (act?.state === 'INACTIVA') {
+      continue
+    }
+
     // Pendiente o En curso
     if (e.dueDate < today) {
       if (act?.frequency === 'DIARIA') {
@@ -445,6 +462,8 @@ export function buildBacklogView(
     if (e.dueDate >= today) continue
 
     const act = actMap.get(e.activityId)
+    // Las actividades eliminadas (INACTIVA) no forman parte del backlog operativo
+    if (act?.state === 'INACTIVA') continue
     // No generar vencimientos anteriores a la fecha efectiva de inicio
     if (act?.startDate && e.dueDate < act.startDate) continue
     if (act?.effectiveFrom && e.dueDate < act.effectiveFrom) continue
@@ -535,6 +554,15 @@ export function buildWeekView(
 
   for (const e of all) {
     const act = actMap.get(e.activityId)
+    if (act?.state === 'INACTIVA') {
+      // Si la actividad está inactiva, no entra a tareas vencidas ni a flexibles operativas.
+      // Solo se preserva en su día si ya fue resuelta (historial)
+      if (isResolved(e.status) && byDay.has(e.dueDate)) {
+        byDay.get(e.dueDate)!.push(e)
+      }
+      continue
+    }
+
     const isFlexibleWeekly = act?.frequency === 'SEMANAL' && Boolean(act.flexible)
     const hasMonthWindow = Boolean(
       act?.windowStartDay && act?.windowEndDay && act.windowEndDay > act.windowStartDay

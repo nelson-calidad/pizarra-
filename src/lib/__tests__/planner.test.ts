@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { Activity, Execution, PlannerEvent } from '../../types'
-import { addMonthsClamped, isoWeekKey, isLeapYear, isValidISO, addDays } from '../dates'
+import {
+  addMonthsClamped, isoWeekKey, isLeapYear, isValidISO, addDays,
+  adjustWeekendToBusinessDay, nextBusinessDay, nextMonday
+} from '../dates'
 import { occurrences, ruleDates, executionId, periodKey } from '../recurrence'
 import {
   buildExecutions, buildTodayView, buildWeekView, buildBacklogView,
@@ -27,6 +30,27 @@ const base = (p: Partial<Activity>): Activity => ({
 })
 
 describe('fechas', () => {
+  it('regla de fin de semana Autosol: sábado a viernes, domingo a lunes', () => {
+    // 2026-10-17 es sábado -> debe pasar al viernes 16
+    expect(adjustWeekendToBusinessDay('2026-10-17')).toBe('2026-10-16')
+    // 2026-10-18 es domingo -> debe pasar al lunes 19
+    expect(adjustWeekendToBusinessDay('2026-10-18')).toBe('2026-10-19')
+    // Días hábiles se conservan exactamente iguales
+    expect(adjustWeekendToBusinessDay('2026-10-16')).toBe('2026-10-16') // viernes
+    expect(adjustWeekendToBusinessDay('2026-10-19')).toBe('2026-10-19') // lunes
+  })
+
+  it('cálculo de siguiente día hábil y próximo lunes', () => {
+    // Desde viernes 16, siguiente día hábil es lunes 19
+    expect(nextBusinessDay('2026-10-16')).toBe('2026-10-19')
+    // Desde jueves 15, siguiente día hábil es viernes 16
+    expect(nextBusinessDay('2026-10-15')).toBe('2026-10-16')
+    // Próximo lunes desde viernes 16 es lunes 19
+    expect(nextMonday('2026-10-16')).toBe('2026-10-19')
+    // Próximo lunes desde lunes 19 es lunes 26
+    expect(nextMonday('2026-10-19')).toBe('2026-10-26')
+  })
+
   it('años bisiestos', () => {
     expect(isLeapYear(2024)).toBe(true)
     expect(isLeapYear(2026)).toBe(false)
@@ -58,6 +82,16 @@ describe('fechas', () => {
 })
 
 describe('recurrencias', () => {
+  it('mensual que cae sábado pasa a viernes y domingo pasa a lunes', () => {
+    // 2026-10-17 es sábado -> debe pasar al viernes 16
+    const sab = base({ frequency: 'MENSUAL', startDate: '2026-10-17', businessDaysOnly: true })
+    expect(ruleDates(sab, '2026-10-01', '2026-10-31')).toEqual(['2026-10-16'])
+
+    // 2026-10-18 es domingo -> debe pasar al lunes 19
+    const dom = base({ frequency: 'MENSUAL', startDate: '2026-10-18', businessDaysOnly: true })
+    expect(ruleDates(dom, '2026-10-01', '2026-10-31')).toEqual(['2026-10-19'])
+  })
+
   it('mensual el día 31 se ajusta al último día y no se acumula el desvío', () => {
     const a = base({ startDate: '2026-01-31' })
     expect(ruleDates(a, '2026-01-01', '2026-05-31')).toEqual([
@@ -125,6 +159,15 @@ describe('recurrencias', () => {
     const a = base({ frequency: 'EVENTO', eventType: 'CIERRE_INDICADORES', offsetDays: 1, branch: 'AMBAS', splitBranches: false })
     const ev: PlannerEvent = { id: 'C10', type: 'CIERRE_INDICADORES', date: '2026-11-05', branch: 'AMBAS', state: 'ACTIVO', createdAt: '' }
     expect(occurrences(a, '2026-11-01', '2026-11-30', [ev])[0].dueDate).toBe('2026-11-06')
+
+    // Si el evento cae viernes 6 y offset es +1 (sábado 7) -> se ajusta a viernes 6
+    const aBiz = base({ frequency: 'EVENTO', eventType: 'CIERRE_INDICADORES', offsetDays: 1, branch: 'AMBAS', splitBranches: false, businessDaysOnly: true })
+    const evFri: PlannerEvent = { id: 'C11', type: 'CIERRE_INDICADORES', date: '2026-11-06', branch: 'AMBAS', state: 'ACTIVO', createdAt: '' }
+    expect(occurrences(aBiz, '2026-11-01', '2026-11-30', [evFri])[0].dueDate).toBe('2026-11-06')
+
+    // Si el evento cae viernes 6 y offset es +2 (domingo 8) -> se ajusta a lunes 9
+    const aPlus2 = base({ frequency: 'EVENTO', eventType: 'CIERRE_INDICADORES', offsetDays: 2, branch: 'AMBAS', splitBranches: false, businessDaysOnly: true })
+    expect(occurrences(aPlus2, '2026-11-01', '2026-11-30', [evFri])[0].dueDate).toBe('2026-11-09')
   })
   it('describe reglas', () => {
     expect(describeRule(base({ startDate: '2026-01-31' }))).toBe('Mensual · día 31 (o último)')

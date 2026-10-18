@@ -7,8 +7,8 @@
 
 import type { Activity, Branch, BranchScope, Execution, PlannerEvent } from '../types'
 import {
-  addDays, addMonthsClamped, daysInMonth, diffDays, fromParts, isoWeekKey, isValidISO,
-  isWeekend, maxDate, minDate, monthsBetween, parseISO, quarterOf, startOfWeek, weekday,
+  addDays, addMonthsClamped, adjustWeekendToBusinessDay, daysInMonth, diffDays, fromParts, isoWeekKey, isValidISO,
+  isWeekend, maxDate, minDate, monthsBetween, parseISO, quarterOf, startOfWeek,
   type ISODate
 } from './dates'
 
@@ -55,16 +55,6 @@ export function activityBranches(a: Pick<Activity, 'branch' | 'splitBranches'>, 
   return base
 }
 
-/** Si solo hábiles está activo en una fecha mensual/anual y cae fin de semana, corre al lunes (o viernes si cambia de mes). */
-function adjustToBusinessDayInMonth(d: ISODate): ISODate {
-  const w = weekday(d)
-  if (w !== 0 && w !== 6) return d
-  const shiftForward = w === 6 ? 2 : 1
-  const next = addDays(d, shiftForward)
-  if (next.slice(0, 7) === d.slice(0, 7)) return next
-  return addDays(d, w === 6 ? -1 : -2)
-}
-
 /** Calcula inicio de ventana para una fecha de vencimiento dada. */
 export function computeWindowStart(a: Activity, dueDate: ISODate): ISODate | undefined {
   if (a.frequency === 'SEMANAL' && a.flexible) {
@@ -87,14 +77,16 @@ export function computeWindowStart(a: Activity, dueDate: ISODate): ISODate | und
 /** Fechas de vencimiento (sin sucursal) de la regla dentro de [from, to]. */
 export function ruleDates(a: Activity, from: ISODate, to: ISODate): ISODate[] {
   if (!isValidISO(a.startDate)) return []
-  const lower = maxDate(from, a.startDate, isValidISO(a.effectiveFrom) ? a.effectiveFrom : undefined)
+  const initialDate = a.businessDaysOnly !== false ? adjustWeekendToBusinessDay(a.startDate) : a.startDate
+  const lower = maxDate(from, initialDate, isValidISO(a.effectiveFrom) ? a.effectiveFrom : undefined)
   const upper = isValidISO(a.endDate) ? minDate(to, a.endDate) : to
   if (lower > upper) return []
   const interval = Math.max(1, Math.floor(Number(a.interval) || 1))
   const out: ISODate[] = []
 
   if (a.frequency === 'UNICA') {
-    if (a.startDate >= lower && a.startDate <= upper) out.push(a.startDate)
+    const d = a.businessDaysOnly !== false ? adjustWeekendToBusinessDay(a.startDate) : a.startDate
+    if (d >= lower && d <= upper) out.push(d)
     return out
   }
 
@@ -103,7 +95,7 @@ export function ruleDates(a: Activity, from: ISODate, to: ISODate): ISODate[] {
     let d = addDays(a.startDate, Math.ceil(offset / interval) * interval)
     let guard = 0
     while (d <= upper && guard++ < 5000) {
-      if (!(a.businessDaysOnly && isWeekend(d))) out.push(d)
+      if (!(a.businessDaysOnly !== false && isWeekend(d))) out.push(d)
       d = addDays(d, interval)
     }
     return out
@@ -115,7 +107,8 @@ export function ruleDates(a: Activity, from: ISODate, to: ISODate): ISODate[] {
     let d = addDays(a.startDate, Math.max(0, Math.ceil(offset / step)) * step)
     let guard = 0
     while (d <= upper && guard++ < 2000) {
-      out.push(d)
+      const adjusted = a.businessDaysOnly !== false ? adjustWeekendToBusinessDay(d) : d
+      if (adjusted >= lower && adjusted <= upper) out.push(adjusted)
       d = addDays(d, step)
     }
     return out
@@ -132,7 +125,7 @@ export function ruleDates(a: Activity, from: ISODate, to: ISODate): ISODate[] {
     const anchorDay = hasWindow ? a.windowEndDay! : parseISO(a.startDate).d
     const effectiveStart = hasWindow
       ? fromParts(parseISO(a.startDate).y, parseISO(a.startDate).m, 1)
-      : a.startDate
+      : initialDate
     const effectiveLower = hasWindow
       ? maxDate(from, effectiveStart, isValidISO(a.effectiveFrom) ? a.effectiveFrom : undefined)
       : lower
@@ -141,8 +134,8 @@ export function ruleDates(a: Activity, from: ISODate, to: ISODate): ISODate[] {
     let guard = 0
     while (guard++ < 1000) {
       let d = addMonthsClamped(a.startDate, k * step, anchorDay)
-      if (!hasWindow && a.businessDaysOnly) {
-        d = adjustToBusinessDayInMonth(d)
+      if (a.businessDaysOnly !== false) {
+        d = adjustWeekendToBusinessDay(d)
       }
       const winStart = computeWindowStart(a, d)
       // Incluir si el vencimiento cae en [effectiveLower, upper] o si su ventana activa se solapa con [from, upper]
@@ -168,7 +161,10 @@ export function occurrences(a: Activity, from: ISODate, to: ISODate, events: Pla
     const out: Occurrence[] = []
     for (const ev of events) {
       if (ev.state === 'CANCELADO' || ev.type !== a.eventType || !isValidISO(ev.date)) continue
-      const due = addDays(ev.date, offset)
+      let due = addDays(ev.date, offset)
+      if (a.businessDaysOnly !== false) {
+        due = adjustWeekendToBusinessDay(due)
+      }
       if (due < from || due > to) continue
       if (lowerBound && ev.date < lowerBound) continue
       for (const b of activityBranches(a, ev.branch)) {

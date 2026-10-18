@@ -3,7 +3,7 @@ import {
   X, Check, Ban, Play, Clock, Edit3, Copy, ExternalLink, PauseCircle, Trash2
 } from 'lucide-react'
 import type { Activity, Execution, ExecStatus, Role } from '../types'
-import { formatDateTime, longDate } from '../lib/dates'
+import { adjustWeekendToBusinessDay, formatDateTime, longDate } from '../lib/dates'
 import {
   BRANCH_LABEL, describeRule, periodLabel, ROLE_LABEL, STATUS_LABEL, VISUAL_LABEL
 } from '../lib/labels'
@@ -157,9 +157,12 @@ export function ExecutionDetail({
               className="field-input"
               value={dueDate}
               onChange={e => {
-                setDueDate(e.target.value)
-                if (e.target.value) onUpdateExecution(execution, { dueDate: e.target.value })
+                const raw = e.target.value
+                const adjusted = raw ? adjustWeekendToBusinessDay(raw) : raw
+                setDueDate(adjusted)
+                if (adjusted) onUpdateExecution(execution, { dueDate: adjusted })
               }}
+              title="Fecha límite de cumplimiento (si cae sábado o domingo pasa a viernes o lunes)"
             />
           </label>
 

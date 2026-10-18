@@ -81,6 +81,35 @@ export function isWeekend(s: ISODate) {
   return w === 0 || w === 6
 }
 
+/**
+ * Regla de días hábiles de Autosol:
+ * Sábado y domingo no se trabaja.
+ * - Si cae SÁBADO: pasa al día hábil anterior -> VIERNES (-1 día).
+ * - Si cae DOMINGO: pasa al día hábil posterior -> LUNES (+1 día).
+ */
+export function adjustWeekendToBusinessDay(s: ISODate): ISODate {
+  const w = weekday(s)
+  if (w === 6) return addDays(s, -1) // Sábado -> Viernes
+  if (w === 0) return addDays(s, 1)  // Domingo -> Lunes
+  return s
+}
+
+/** Devuelve el siguiente día hábil a partir de una fecha dada (excluyendo fines de semana). */
+export function nextBusinessDay(s: ISODate): ISODate {
+  let next = addDays(s, 1)
+  while (isWeekend(next)) {
+    next = addDays(next, 1)
+  }
+  return next
+}
+
+/** Devuelve el próximo lunes a partir de una fecha dada. */
+export function nextMonday(s: ISODate): ISODate {
+  const w = weekday(s) // 0 domingo, 1 lunes... 6 sábado
+  const daysUntilMonday = (8 - (w === 0 ? 7 : w)) % 7 || 7
+  return addDays(s, daysUntilMonday)
+}
+
 /** Semana ISO-8601: 'YYYY-Www' */
 export function isoWeekKey(s: ISODate): string {
   const t = new Date(toUTC(s))

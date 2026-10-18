@@ -5,7 +5,10 @@ import {
   CheckCircle2
 } from 'lucide-react'
 import type { Activity, Execution, ExecStatus, Role } from '../types'
-import { relativeLabel, shortDate } from '../lib/dates'
+import {
+  adjustWeekendToBusinessDay, nextBusinessDay, nextMonday,
+  relativeLabel, shortDate
+} from '../lib/dates'
 import {
   BRANCH_LABEL, BRANCH_SHORT, ROLE_LABEL,
   getDefaultCompletionLabel
@@ -423,20 +426,8 @@ export function ExecutionRow({
       {/* Reprogramación rápida */}
       {showReschedule && onReschedule && (
         <div className="exec-inline-drawer">
-          <div className="reschedule-inline-row">
-            <span className="form-label">Fecha para esta ejecución:</span>
-            <input
-              type="date"
-              className="form-input"
-              style={{ width: 'auto' }}
-              defaultValue={execution.dueDate}
-              onChange={e => {
-                if (e.target.value) {
-                  onReschedule(execution, e.target.value)
-                  setShowReschedule(false)
-                }
-              }}
-            />
+          <div className="reschedule-inline-row" style={{ flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+            <span className="form-label" style={{ fontWeight: 600 }}>Cambiar fecha:</span>
             {execution.dueDate !== today && (
               <button
                 type="button"
@@ -445,10 +436,49 @@ export function ExecutionRow({
                   onReschedule(execution, today)
                   setShowReschedule(false)
                 }}
+                title="Mover esta actividad para hoy"
               >
                 Hacer hoy
               </button>
             )}
+            <button
+              type="button"
+              className="btn-secondary-sm"
+              onClick={() => {
+                const nxt = nextBusinessDay(today)
+                onReschedule(execution, nxt)
+                setShowReschedule(false)
+              }}
+              title="Mover al siguiente día hábil"
+            >
+              Mañana hábil
+            </button>
+            <button
+              type="button"
+              className="btn-secondary-sm"
+              onClick={() => {
+                const mon = nextMonday(today)
+                onReschedule(execution, mon)
+                setShowReschedule(false)
+              }}
+              title="Mover al próximo lunes"
+            >
+              Pasar al lunes
+            </button>
+            <input
+              type="date"
+              className="form-input"
+              style={{ width: 'auto', padding: '3px 8px', fontSize: 13 }}
+              defaultValue={execution.dueDate}
+              onChange={e => {
+                if (e.target.value) {
+                  const adjusted = adjustWeekendToBusinessDay(e.target.value)
+                  onReschedule(execution, adjusted)
+                  setShowReschedule(false)
+                }
+              }}
+              title="Elegir otra fecha específica (si cae sábado o domingo se ajusta automáticamente a día hábil)"
+            />
             <button
               type="button"
               className="btn-secondary-sm"

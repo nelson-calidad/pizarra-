@@ -74,6 +74,10 @@ export function buildExecutions(
   for (const e of persisted) {
     const act = actById.get(e.activityId)
     if (!act) continue
+    // Si la actividad fue eliminada (INACTIVA), descartar ejecuciones no realizadas (conservar solo el historial completado)
+    if (act.state === 'INACTIVA' && e.status !== 'REALIZADA') {
+      continue
+    }
     // Descartar ejecuciones obsoletas de branch AMBAS cuando la actividad se divide por sucursal
     if (act.branch === 'AMBAS' && act.splitBranches !== false && e.branch === 'AMBAS') {
       continue

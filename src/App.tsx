@@ -490,6 +490,22 @@ export default function App() {
     const next: Activity = { ...act, state: 'INACTIVA', updatedAt }
     setActivities(list => list.map(a => (a.id === act.id ? next : a)))
     enqueue('upsertActivity', next.id, activityToSheet(next))
+
+    // Descartar de inmediato ejecuciones pendientes o no completadas de esta actividad
+    const toRemove = executions.filter(
+      e => e.activityId === act.id && e.status !== 'REALIZADA' && !e.virtual
+    )
+    setExecutions(list =>
+      list.filter(e => !(e.activityId === act.id && e.status !== 'REALIZADA'))
+    )
+    toRemove.forEach(e => enqueue('deleteExecution', e.id))
+  }
+
+  const reactivateActivity = (act: Activity) => {
+    const updatedAt = new Date().toISOString()
+    const next: Activity = { ...act, state: 'ACTIVA', updatedAt }
+    setActivities(list => list.map(a => (a.id === act.id ? next : a)))
+    enqueue('upsertActivity', next.id, activityToSheet(next))
   }
 
   const upsertExecutionLocal = (ex: Execution, patch: Partial<Execution>) => {
@@ -980,6 +996,7 @@ export default function App() {
               onDuplicateActivity={duplicateActivity}
               onTogglePauseActivity={togglePauseActivity}
               onDeleteActivity={deactivateActivity}
+              onRestoreActivity={reactivateActivity}
               onOpenEvents={() => setEventsOpen(true)}
               onQuickCreateTemplate={quickCreateFromTemplate}
               onImportActivities={handleImportActivities}

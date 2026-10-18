@@ -2,17 +2,17 @@ import { useMemo, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, Plus, CalendarClock, SlidersHorizontal,
   Check, Ban, ChevronDown, ChevronUp, Edit3, Copy, PauseCircle, PlayCircle,
-  Trash2, Sparkles, CheckCircle2, Upload
+  Trash2, Sparkles, CheckCircle2, Upload, Search, X, MoreVertical, RotateCcw
 } from 'lucide-react'
 import type {
-  Activity, AgendaView, BranchScope, Execution, ExecStatus, Note, PlannerEvent, Role
+  Activity, AgendaView, BranchScope, Execution, ExecStatus, Frequency, Note, PlannerEvent, Role
 } from '../types'
 import {
   addDays, capitalize, daysInMonth, endOfMonth, fromParts, longDate,
-  monthLabel, parseISO, shortDate, weekday, weekdayName
+  monthLabel, parseISO, shortDate, weekday, weekdayName, isValidISO, weekdayNameByIndex
 } from '../lib/dates'
 import {
-  BRANCH_LABEL, BRANCH_SHORT, describeRule, eventTypeLabel, FREQ_LABEL, ROLE_LABEL
+  BRANCH_LABEL, BRANCH_SHORT, eventTypeLabel, FREQ_LABEL, ROLE_LABEL
 } from '../lib/labels'
 import {
   buildExecutions, buildTodayView, buildWeekView, buildBacklogView,
@@ -48,6 +48,7 @@ type Props = {
   onDuplicateActivity: (act: Activity) => void
   onTogglePauseActivity: (act: Activity) => void
   onDeleteActivity: (act: Activity) => void
+  onRestoreActivity?: (act: Activity) => void
   onOpenEvents: () => void
   onQuickCreateTemplate: (tpl: ActivityTemplate) => void
   onImportActivities: (acts: Activity[]) => void
@@ -77,6 +78,7 @@ export function AgendaSection({
   onDuplicateActivity,
   onTogglePauseActivity,
   onDeleteActivity,
+  onRestoreActivity,
   onOpenEvents,
   onQuickCreateTemplate,
   onImportActivities,
@@ -409,12 +411,13 @@ export function AgendaSection({
       {/* PANEL DISCRETO DE CATÁLOGO DE REGLAS */}
       {showCatalog ? (
         <CatalogView
-          activities={activeActivities}
+          activities={activities}
           onOpenNewActivity={onOpenNewActivity}
           onEditActivity={onEditActivity}
           onDuplicateActivity={onDuplicateActivity}
           onTogglePauseActivity={onTogglePauseActivity}
           onDeleteActivity={onDeleteActivity}
+          onRestoreActivity={onRestoreActivity}
           onQuickCreateTemplate={onQuickCreateTemplate}
           onOpenImport={() => setImportOpen(true)}
           onClose={() => setShowCatalog(false)}
@@ -1238,6 +1241,68 @@ function SelectedDayPanel({
   )
 }
 
+function getCatalogSecondaryInfo(act: Activity): string {
+  const parts: string[] = []
+
+  // Frecuencia
+  const freqLabel =
+    act.frequency === 'EVENTO'
+      ? 'Por evento'
+      : act.frequency === 'UNICA'
+      ? 'Puntual'
+      : FREQ_LABEL[act.frequency] || act.frequency
+  parts.push(freqLabel)
+
+  // Regla
+  if (act.frequency === 'DIARIA') {
+    parts.push(act.businessDaysOnly ? 'Días hábiles' : 'Todos los días')
+  } else if (act.frequency === 'SEMANAL') {
+    if (isValidISO(act.startDate)) {
+      const wName = capitalize(weekdayNameByIndex(weekday(act.startDate)))
+      parts.push(act.flexible ? `Flexible (vence ${wName})` : wName)
+    }
+  } else if (['MENSUAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'].includes(act.frequency)) {
+    if (act.windowStartDay && act.windowEndDay && act.windowEndDay >= act.windowStartDay) {
+      parts.push(`Del ${act.windowStartDay} al ${act.windowEndDay}`)
+    } else if (isValidISO(act.startDate)) {
+      const { d } = parseISO(act.startDate)
+      parts.push(d >= 29 ? 'Día 31 (o último)' : `Día ${d}`)
+    }
+  } else if (act.frequency === 'EVENTO') {
+    if (act.eventType && !act.name.toUpperCase().includes(act.eventType.toUpperCase())) {
+      parts.push(eventTypeLabel(act.eventType))
+    }
+  } else if (act.frequency === 'UNICA') {
+    if (isValidISO(act.startDate)) {
+      parts.push(shortDate(act.startDate))
+    }
+  }
+
+  // Sucursal
+  const branchText =
+    act.branch === 'AMBAS'
+      ? 'Jujuy y Salta'
+      : act.branch === 'JUJUY'
+      ? 'Jujuy'
+      : act.branch === 'SALTA'
+      ? 'Salta'
+      : 'General'
+  parts.push(branchText)
+
+  return parts.filter(Boolean).join(' · ')
+}
+
+const FREQUENCY_ORDER: { freq: Frequency; label: string }[] = [
+  { freq: 'DIARIA', label: 'Diarias' },
+  { freq: 'SEMANAL', label: 'Semanales' },
+  { freq: 'MENSUAL', label: 'Mensuales' },
+  { freq: 'TRIMESTRAL', label: 'Trimestrales' },
+  { freq: 'SEMESTRAL', label: 'Semestrales' },
+  { freq: 'ANUAL', label: 'Anuales' },
+  { freq: 'EVENTO', label: 'Por evento' },
+  { freq: 'UNICA', label: 'Puntuales' }
+]
+
 function CatalogView({
   activities,
   onOpenNewActivity,
@@ -1245,6 +1310,7 @@ function CatalogView({
   onDuplicateActivity,
   onTogglePauseActivity,
   onDeleteActivity,
+  onRestoreActivity,
   onQuickCreateTemplate,
   onOpenImport,
   onClose
@@ -1255,18 +1321,120 @@ function CatalogView({
   onDuplicateActivity: (act: Activity) => void
   onTogglePauseActivity: (act: Activity) => void
   onDeleteActivity: (act: Activity) => void
+  onRestoreActivity?: (act: Activity) => void
   onQuickCreateTemplate: (tpl: ActivityTemplate) => void
   onOpenImport: () => void
   onClose: () => void
 }) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterTab, setFilterTab] = useState<'ACTIVAS' | 'PAUSADAS' | 'TODAS' | 'ELIMINADAS'>('ACTIVAS')
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null)
+
+  // Conteos reales sobre actividades maestras
+  const masterActivities = useMemo(
+    () => activities.filter(a => a.state !== 'INACTIVA'),
+    [activities]
+  )
+  const totalMaster = masterActivities.length
+  const activeMaster = useMemo(
+    () => masterActivities.filter(a => a.state === 'ACTIVA').length,
+    [masterActivities]
+  )
+  const pausedMaster = useMemo(
+    () => masterActivities.filter(a => a.state === 'PAUSADA').length,
+    [masterActivities]
+  )
+  const deletedMaster = useMemo(
+    () => activities.filter(a => a.state === 'INACTIVA').length,
+    [activities]
+  )
+
+  // Base filtrada por pestaña
+  const baseActivities = useMemo(() => {
+    if (filterTab === 'ACTIVAS') return masterActivities.filter(a => a.state === 'ACTIVA')
+    if (filterTab === 'PAUSADAS') return masterActivities.filter(a => a.state === 'PAUSADA')
+    if (filterTab === 'TODAS') return masterActivities
+    return activities.filter(a => a.state === 'INACTIVA')
+  }, [filterTab, masterActivities, activities])
+
+  // Filtrado instantáneo por búsqueda
+  const normalizedQuery = useMemo(
+    () => searchQuery.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
+    [searchQuery]
+  )
+
+  const isSearching = normalizedQuery.length > 0
+
+  const filteredActivities = useMemo(() => {
+    if (!isSearching) return baseActivities
+    const norm = (s?: string) =>
+      (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    return baseActivities.filter(act => {
+      const sec = norm(getCatalogSecondaryInfo(act))
+      return (
+        norm(act.name).includes(normalizedQuery) ||
+        norm(act.description).includes(normalizedQuery) ||
+        norm(act.category).includes(normalizedQuery) ||
+        norm(act.eventType).includes(normalizedQuery) ||
+        sec.includes(normalizedQuery)
+      )
+    })
+  }, [baseActivities, isSearching, normalizedQuery])
+
+  // Agrupación dinámica por frecuencia
+  const groupedSections = useMemo(() => {
+    const map = new Map<string, Activity[]>()
+    for (const a of filteredActivities) {
+      const f = a.frequency || 'UNICA'
+      const list = map.get(f) || []
+      list.push(a)
+      map.set(f, list)
+    }
+
+    const sections: { freq: Frequency; label: string; items: Activity[] }[] = []
+    const seen = new Set<string>()
+
+    for (const { freq, label } of FREQUENCY_ORDER) {
+      const items = map.get(freq)
+      if (items && items.length > 0) {
+        sections.push({ freq, label, items })
+        seen.add(freq)
+      }
+    }
+
+    // Cualquier frecuencia adicional no prevista
+    for (const [f, items] of map.entries()) {
+      if (!seen.has(f) && items.length > 0) {
+        sections.push({
+          freq: f as Frequency,
+          label: capitalize(f.toLowerCase()),
+          items
+        })
+      }
+    }
+
+    return sections
+  }, [filteredActivities])
+
+  const toggleGroup = (freq: string) => {
+    setOpenGroup(curr => (curr === freq ? null : freq))
+  }
+
   return (
     <div className="catalog-container">
-      <div className="catalog-header">
-        <div>
-          <h2>Catálogo de actividades configuradas ({activities.length})</h2>
-          <p>Editá, pausá o reactivá reglas sin afectar el historial registrado.</p>
+      {/* Header */}
+      <div className="catalog-header-top">
+        <div className="catalog-header-info">
+          <h2>Mis actividades</h2>
+          <div className="catalog-counts-summary">
+            <span>
+              {totalMaster} {totalMaster === 1 ? 'actividad' : 'actividades'} · {activeMaster} {activeMaster === 1 ? 'activa' : 'activas'} · {pausedMaster} {pausedMaster === 1 ? 'pausada' : 'pausadas'}
+            </span>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+
+        <div className="catalog-header-actions">
           <button
             type="button"
             className="btn-secondary"
@@ -1274,7 +1442,7 @@ function CatalogView({
             title="Importar actividades masivamente desde archivo JSON"
           >
             <Upload size={14} />
-            <span>Importar actividades</span>
+            <span>Importar</span>
           </button>
           <button type="button" className="btn-secondary" onClick={onClose}>
             Volver a Agenda
@@ -1290,78 +1458,243 @@ function CatalogView({
         </div>
       </div>
 
-      {activities.length === 0 ? (
+      {/* Barra de herramientas: Buscador y Filtros */}
+      <div className="catalog-toolbar">
+        <div className="catalog-search-wrap">
+          <Search size={15} className="catalog-search-icon" />
+          <input
+            type="text"
+            className="catalog-search-input"
+            placeholder="Buscar actividad por nombre, categoría o palabra clave…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              className="catalog-search-clear"
+              onClick={() => setSearchQuery('')}
+              title="Limpiar búsqueda"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        <div className="catalog-filter-tabs">
+          <button
+            type="button"
+            className={`catalog-filter-tab ${filterTab === 'ACTIVAS' ? 'active' : ''}`}
+            onClick={() => setFilterTab('ACTIVAS')}
+          >
+            Activas ({activeMaster})
+          </button>
+          <button
+            type="button"
+            className={`catalog-filter-tab ${filterTab === 'PAUSADAS' ? 'active' : ''}`}
+            onClick={() => setFilterTab('PAUSADAS')}
+          >
+            Pausadas ({pausedMaster})
+          </button>
+          <button
+            type="button"
+            className={`catalog-filter-tab ${filterTab === 'TODAS' ? 'active' : ''}`}
+            onClick={() => setFilterTab('TODAS')}
+          >
+            Todas ({totalMaster})
+          </button>
+          {deletedMaster > 0 && (
+            <button
+              type="button"
+              className={`catalog-filter-tab tab-danger ${filterTab === 'ELIMINADAS' ? 'active' : ''}`}
+              onClick={() => setFilterTab('ELIMINADAS')}
+            >
+              Eliminadas ({deletedMaster})
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Contenido: Listado agrupado con acordeón */}
+      {masterActivities.length === 0 && filterTab !== 'ELIMINADAS' ? (
         <OnboardingEmpty
           onOpenNewActivity={onOpenNewActivity}
           onQuickCreateTemplate={onQuickCreateTemplate}
           onOpenImport={onOpenImport}
         />
-      ) : (
-        <div className="catalog-list">
-          {activities.map(act => (
-            <div
-              key={act.id}
-              className={`catalog-item ${act.state === 'PAUSADA' ? 'is-paused' : ''}`}
+      ) : filteredActivities.length === 0 ? (
+        <div className="planner-empty-box" style={{ padding: '36px 16px' }}>
+          <p>
+            {isSearching
+              ? `No se encontraron actividades que coincidan con «${searchQuery}».`
+              : filterTab === 'ELIMINADAS'
+              ? 'No hay actividades eliminadas en la papelera.'
+              : filterTab === 'PAUSADAS'
+              ? 'No hay actividades pausadas actualmente.'
+              : 'No hay actividades en esta vista.'}
+          </p>
+          {isSearching && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setSearchQuery('')}
             >
-              <div className="catalog-item-main">
-                <div className="catalog-title-row">
-                  <b>{act.name}</b>
-                  <span className="exec-period-tag">{describeRule(act)}</span>
-                  <span className={`branch-pill branch-${act.branch.toLowerCase()}`}>
-                    {BRANCH_LABEL[act.branch]}
-                  </span>
-                  <span className="role-pill">Hab: {ROLE_LABEL[act.responsible]}</span>
-                  {act.state === 'PAUSADA' && <span className="paused-badge">Pausada</span>}
-                </div>
+              Limpiar búsqueda
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="catalog-groups">
+          {groupedSections.map(sec => {
+            const isOpen = isSearching || openGroup === sec.freq
+            return (
+              <div
+                key={sec.freq}
+                className={`catalog-group-section ${isOpen ? 'is-open' : ''}`}
+              >
+                <button
+                  type="button"
+                  className="catalog-group-header"
+                  onClick={() => toggleGroup(sec.freq)}
+                  aria-expanded={isOpen}
+                >
+                  <div className="catalog-group-title-wrap">
+                    <ChevronRight
+                      size={16}
+                      className={`catalog-group-chevron ${isOpen ? 'is-open' : ''}`}
+                    />
+                    <span>{sec.label}</span>
+                    <span className="catalog-group-count">({sec.items.length})</span>
+                  </div>
+                </button>
+
+                {isOpen && (
+                  <div className="catalog-group-items">
+                    {sec.items.map(act => (
+                      <div
+                        key={act.id}
+                        className={`catalog-compact-row ${act.state === 'PAUSADA' ? 'is-paused' : ''} ${act.state === 'INACTIVA' ? 'is-inactive' : ''}`}
+                      >
+                        <div className="catalog-compact-main">
+                          <div className="catalog-compact-title">
+                            <span>{act.name}</span>
+                            {act.state === 'PAUSADA' && (
+                              <span className="catalog-pill-paused">Pausada</span>
+                            )}
+                            {act.state === 'INACTIVA' && (
+                              <span className="catalog-pill-deleted">Eliminada</span>
+                            )}
+                          </div>
+                          <div className="catalog-compact-sub">
+                            {getCatalogSecondaryInfo(act)}
+                          </div>
+                        </div>
+
+                        <div className="catalog-compact-actions">
+                          {act.state === 'INACTIVA' ? (
+                            <button
+                              type="button"
+                              className="btn-catalog-restore"
+                              onClick={() => onRestoreActivity?.(act)}
+                              title="Restaurar actividad a la agenda"
+                            >
+                              <RotateCcw size={13} />
+                              <span>Restaurar</span>
+                            </button>
+                          ) : (
+                            <div className="catalog-menu-container">
+                              <button
+                                type="button"
+                                className="btn-catalog-more"
+                                onClick={() =>
+                                  setActiveMenuId(activeMenuId === act.id ? null : act.id)
+                                }
+                                title="Opciones"
+                                aria-label="Opciones de actividad"
+                              >
+                                <MoreVertical size={16} />
+                              </button>
+
+                              {activeMenuId === act.id && (
+                                <>
+                                  <div
+                                    className="catalog-menu-backdrop"
+                                    onClick={() => setActiveMenuId(null)}
+                                  />
+                                  <div className="catalog-dropdown-menu">
+                                    <button
+                                      type="button"
+                                      className="catalog-dropdown-item"
+                                      onClick={() => {
+                                        setActiveMenuId(null)
+                                        onEditActivity(act)
+                                      }}
+                                    >
+                                      <Edit3 size={13} />
+                                      <span>Editar</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="catalog-dropdown-item"
+                                      onClick={() => {
+                                        setActiveMenuId(null)
+                                        onDuplicateActivity(act)
+                                      }}
+                                    >
+                                      <Copy size={13} />
+                                      <span>Duplicar</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="catalog-dropdown-item"
+                                      onClick={() => {
+                                        setActiveMenuId(null)
+                                        onTogglePauseActivity(act)
+                                      }}
+                                    >
+                                      {act.state === 'PAUSADA' ? (
+                                        <>
+                                          <PlayCircle size={13} />
+                                          <span>Reactivar</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <PauseCircle size={13} />
+                                          <span>Pausar</span>
+                                        </>
+                                      )}
+                                    </button>
+                                    <div className="catalog-dropdown-divider" />
+                                    <button
+                                      type="button"
+                                      className="catalog-dropdown-item item-danger"
+                                      onClick={() => {
+                                        setActiveMenuId(null)
+                                        if (
+                                          window.confirm(
+                                            '¿Eliminar esta actividad? Dejará de aparecer en la agenda. Su historial se conservará.'
+                                          )
+                                        ) {
+                                          onDeleteActivity(act)
+                                        }
+                                      }}
+                                    >
+                                      <Trash2 size={13} />
+                                      <span>Eliminar</span>
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="catalog-item-actions">
-                <button
-                  type="button"
-                  className="btn-exec-action"
-                  onClick={() => onEditActivity(act)}
-                >
-                  <Edit3 size={13} /> Editar
-                </button>
-                <button
-                  type="button"
-                  className="btn-exec-action"
-                  onClick={() => onDuplicateActivity(act)}
-                >
-                  <Copy size={13} /> Duplicar
-                </button>
-                <button
-                  type="button"
-                  className="btn-exec-action"
-                  onClick={() => onTogglePauseActivity(act)}
-                >
-                  {act.state === 'PAUSADA' ? (
-                    <>
-                      <PlayCircle size={13} /> Reactivar
-                    </>
-                  ) : (
-                    <>
-                      <PauseCircle size={13} /> Pausar
-                    </>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className="btn-exec-icon btn-exec-notdone"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        '¿Desactivar esta actividad? El historial realizado se conservará.'
-                      )
-                    ) {
-                      onDeleteActivity(act)
-                    }
-                  }}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

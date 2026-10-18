@@ -574,6 +574,50 @@ describe('Etapa 5: Vista Anteriores, Sucursales independientes y Cumplimiento si
     expect(patch.executor).toBe('ANALISTA')
     expect(patch.completedBy).toBe('ANALISTA')
   })
+
+  it('actividad INACTIVA (eliminada) descarta pendientes pero conserva historial REALIZADA', () => {
+    const act = base({
+      id: 'act-inactiva',
+      name: 'Actividad Eliminada',
+      state: 'INACTIVA',
+      startDate: '2026-10-10'
+    })
+
+    const pendingEx: Execution = {
+      id: 'ex-pending',
+      activityId: 'act-inactiva',
+      dueDate: '2026-10-16',
+      period: '2026-10-16',
+      branch: 'JUJUY',
+      executor: 'RAC',
+      status: 'PENDIENTE',
+      createdAt: '2026-10-16'
+    }
+
+    const doneEx: Execution = {
+      id: 'ex-done',
+      activityId: 'act-inactiva',
+      dueDate: '2026-10-15',
+      period: '2026-10-15',
+      branch: 'JUJUY',
+      executor: 'RAC',
+      status: 'REALIZADA',
+      completedAt: '2026-10-15T10:00:00Z',
+      createdAt: '2026-10-15'
+    }
+
+    const res = buildExecutions([act], [pendingEx, doneEx], [], '2026-10-01', '2026-10-31')
+
+    // La pendiente fue descartada
+    expect(res.some(e => e.id === 'ex-pending')).toBe(false)
+    // La realizada histórica fue preservada
+    expect(res.some(e => e.id === 'ex-done')).toBe(true)
+
+    // En la vista Hoy, no aparece la actividad eliminada
+    const todayRes = buildTodayView([act], [pendingEx, doneEx], [], '2026-10-16')
+    expect(todayRes.todayTasks.some(e => e.activityId === 'act-inactiva')).toBe(false)
+  })
 })
+
 
 

@@ -87,6 +87,23 @@ function configurarContrasenas(racPass, analistaPass) {
   return { success: true, message: 'Contraseñas configuradas correctamente en Script Properties' };
 }
 
+function readPassFromConfig_(user) {
+  try {
+    const ss = SpreadsheetApp.getActive();
+    if (!ss) return null;
+    const sh = ss.getSheetByName('CONFIG');
+    if (!sh || sh.getLastRow() < 2) return null;
+    const rows = sh.getDataRange().getValues();
+    const targetKey = user === 'RAC' ? 'PASS_RAC' : 'PASS_ANALISTA';
+    const row = rows.find((r, i) => i > 0 && String(r[0]).trim().toUpperCase() === targetKey);
+    if (!row) return null;
+    const val = String(row[1] || '').trim();
+    return val || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 function ensureDefaultAuth_() {
   const props = PropertiesService.getScriptProperties();
   let salt = props.getProperty(SECURITY_SALT_KEY);
@@ -94,10 +111,18 @@ function ensureDefaultAuth_() {
     salt = Utilities.getUuid();
     props.setProperty(SECURITY_SALT_KEY, salt);
   }
-  if (!props.getProperty(RAC_HASH_KEY)) {
+  // Si están definidas en la hoja CONFIG, se sincronizan
+  const configRac = readPassFromConfig_('RAC');
+  if (configRac) {
+    props.setProperty(RAC_HASH_KEY, hashPassword_(configRac, salt));
+  } else if (!props.getProperty(RAC_HASH_KEY)) {
     props.setProperty(RAC_HASH_KEY, hashPassword_('RacAutosol2026!', salt));
   }
-  if (!props.getProperty(ANALISTA_HASH_KEY)) {
+
+  const configAnalista = readPassFromConfig_('ANALISTA');
+  if (configAnalista) {
+    props.setProperty(ANALISTA_HASH_KEY, hashPassword_(configAnalista, salt));
+  } else if (!props.getProperty(ANALISTA_HASH_KEY)) {
     props.setProperty(ANALISTA_HASH_KEY, hashPassword_('AnalistaAutosol2026!', salt));
   }
 }
@@ -118,11 +143,13 @@ function loginUser_(username, password) {
   const salt = props.getProperty(SECURITY_SALT_KEY);
   const targetKey = u === 'RAC' ? RAC_HASH_KEY : ANALISTA_HASH_KEY;
   const storedHash = props.getProperty(targetKey);
-  if (!storedHash) {
-    return { success: false, error: 'Contraseña no configurada en el servidor para ' + u };
-  }
-  const computed = hashPassword_(String(password || '').trim(), salt);
-  if (computed !== storedHash) {
+  const passFromConfig = readPassFromConfig_(u);
+
+  const inputPass = String(password || '').trim();
+  const computed = hashPassword_(inputPass, salt);
+
+  const isValid = (storedHash && computed === storedHash) || (passFromConfig && inputPass === passFromConfig);
+  if (!isValid) {
     return { success: false, error: 'Contraseña incorrecta.' };
   }
 

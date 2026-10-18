@@ -59,27 +59,132 @@ function jsonResponse_(data) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ---- Autenticación por clave compartida ----
-// Si en la hoja CONFIG existe una fila con CLAVE = 'ACCESS_KEY' y un VALOR no vacío,
-// todas las consultas deben enviar `key` coincidente.
-// Si ocurre un error de lectura o la clave no coincide, se deniega el acceso por seguridad.
+// ---- Autenticación y Seguridad (Script Properties + Hashing con Sal) ----
+const SECURITY_SALT_KEY = 'SECURITY_SALT';
+const RAC_HASH_KEY = 'USER_HASH_RAC';
+const ANALISTA_HASH_KEY = 'USER_HASH_ANALISTA';
+const SESSION_PREFIX = 'SESSION_';
+const SESSION_EXPIRATION_DAYS = 14;
 
+/**
+ * Configura o actualiza las contraseñas para RAC y Analista en Script Properties (privado del servidor).
+ * Se puede ejecutar manualmente desde la consola del editor de Apps Script.
+ * Contraseñas iniciales sugeridas: 'RacAutosol2026!' y 'AnalistaAutosol2026!'.
+ */
+function configurarContrasenas(racPass, analistaPass) {
+  const props = PropertiesService.getScriptProperties();
+  let salt = props.getProperty(SECURITY_SALT_KEY);
+  if (!salt) {
+    salt = Utilities.getUuid();
+    props.setProperty(SECURITY_SALT_KEY, salt);
+  }
+  if (racPass) {
+    props.setProperty(RAC_HASH_KEY, hashPassword_(String(racPass).trim(), salt));
+  }
+  if (analistaPass) {
+    props.setProperty(ANALISTA_HASH_KEY, hashPassword_(String(analistaPass).trim(), salt));
+  }
+  return { success: true, message: 'Contraseñas configuradas correctamente en Script Properties' };
+}
+
+function ensureDefaultAuth_() {
+  const props = PropertiesService.getScriptProperties();
+  let salt = props.getProperty(SECURITY_SALT_KEY);
+  if (!salt) {
+    salt = Utilities.getUuid();
+    props.setProperty(SECURITY_SALT_KEY, salt);
+  }
+  if (!props.getProperty(RAC_HASH_KEY)) {
+    props.setProperty(RAC_HASH_KEY, hashPassword_('RacAutosol2026!', salt));
+  }
+  if (!props.getProperty(ANALISTA_HASH_KEY)) {
+    props.setProperty(ANALISTA_HASH_KEY, hashPassword_('AnalistaAutosol2026!', salt));
+  }
+}
+
+function hashPassword_(password, salt) {
+  const raw = salt + '::' + password;
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw, Utilities.Charset.UTF_8);
+  return digest.map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
+}
+
+function loginUser_(username, password) {
+  ensureDefaultAuth_();
+  const u = String(username || '').trim().toUpperCase();
+  if (u !== 'RAC' && u !== 'ANALISTA') {
+    return { success: false, error: 'Usuario no reconocido. Debe ser RAC o Analista.' };
+  }
+  const props = PropertiesService.getScriptProperties();
+  const salt = props.getProperty(SECURITY_SALT_KEY);
+  const targetKey = u === 'RAC' ? RAC_HASH_KEY : ANALISTA_HASH_KEY;
+  const storedHash = props.getProperty(targetKey);
+  if (!storedHash) {
+    return { success: false, error: 'Contraseña no configurada en el servidor para ' + u };
+  }
+  const computed = hashPassword_(String(password || '').trim(), salt);
+  if (computed !== storedHash) {
+    return { success: false, error: 'Contraseña incorrecta.' };
+  }
+
+  const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  const expiresAt = new Date(Date.now() + SESSION_EXPIRATION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const session = {
+    user: u,
+    createdAt: new Date().toISOString(),
+    expiresAt: expiresAt
+  };
+  props.setProperty(SESSION_PREFIX + token, JSON.stringify(session));
+
+  return {
+    success: true,
+    user: u,
+    token: token,
+    expiresAt: expiresAt
+  };
+}
+
+function verifySession_(token) {
+  if (!token || typeof token !== 'string') return null;
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty(SESSION_PREFIX + token);
+  if (!raw) return null;
+  try {
+    const session = JSON.parse(raw);
+    if (!session || !session.expiresAt || !session.user) return null;
+    if (new Date(session.expiresAt).getTime() < Date.now()) {
+      props.deleteProperty(SESSION_PREFIX + token);
+      return null;
+    }
+    return session;
+  } catch (_) {
+    return null;
+  }
+}
+
+function logoutUser_(token) {
+  if (token && typeof token === 'string') {
+    PropertiesService.getScriptProperties().deleteProperty(SESSION_PREFIX + token);
+  }
+  return { success: true };
+}
+
+// ---- Autenticación por clave compartida (compatibilidad de transición) ----
 function checkAuth_(p) {
   try {
     const ss = SpreadsheetApp.getActive();
     if (!ss) return false;
     const sh = ss.getSheetByName('CONFIG');
-    if (!sh || sh.getLastRow() < 2) return false; // falta CONFIG o no tiene filas
+    if (!sh || sh.getLastRow() < 2) return false;
     const rows = sh.getDataRange().getValues();
     const row = rows.find((r, i) => i > 0 && String(r[0]).trim().toUpperCase() === 'ACCESS_KEY');
-    if (!row) return false; // falta ACCESS_KEY en CONFIG
+    if (!row) return false;
     const expected = String(row[1] || '').trim();
-    if (!expected) return false; // ACCESS_KEY está vacía
+    if (!expected) return false;
     const received = String(p.key || '').trim();
     return received === expected;
   } catch (err) {
     Logger.log('Error en checkAuth_: ' + err.message);
-    return false; // Ante error de evaluación de seguridad, rechazar por defecto
+    return false;
   }
 }
 
@@ -88,18 +193,41 @@ function checkAuth_(p) {
 function route_(p, isWrite) {
   const lock = isWrite ? LockService.getScriptLock() : null;
   try {
-    if (!checkAuth_(p)) {
+    const a = p.action;
+
+    // Login no requiere autenticación previa
+    if (a === 'login') {
+      return loginUser_(p.user, p.password);
+    }
+
+    // Verificación de sesión individual por token
+    let authenticatedUser = null;
+    const session = verifySession_(p.token);
+    if (session) {
+      authenticatedUser = session.user;
+    } else if (checkAuth_(p)) {
+      // Compatibilidad con clave compartida mientras se realiza la migración
+      authenticatedUser = (p.user && (p.user === 'ANALISTA' || p.user === 'RAC')) ? p.user : 'RAC';
+    } else {
       return { success: false, code: 401, error: 'NO_AUTORIZADO' };
     }
+
+    if (a === 'logout') {
+      return logoutUser_(p.token);
+    }
+
+    if (a === 'checkSession') {
+      return { success: true, user: authenticatedUser };
+    }
+
     if (lock) lock.waitLock(15000);
 
-    const a = p.action;
     if (a === 'setupSpreadsheet') return { success: true, data: setupSpreadsheet(), message: 'Hojas preparadas' };
 
     // NOTAS (compatibilidad total con versión previa)
     if (a === 'getNotes')     return { success: true, data: readAll_('NOTAS') };
     if (a === 'getNote')      return { success: true, data: readAll_('NOTAS').find(n => n.ID === p.id) || null };
-    if (a === 'createNote')   return createNote_(p.data || {});
+    if (a === 'createNote')   return createNote_(Object.assign({}, p.data || {}, { ACTOR: authenticatedUser }));
     if (a === 'updateNote' || a === 'moveNote') return update_('NOTAS', p.id, p.data || {}, true);
     if (a === 'deleteNote')   return del_('NOTAS', p.id);
     if (a === 'archiveNote')  return update_('NOTAS', p.id, { ESTADO: 'ARCHIVADO', ARCHIVADO: true });
@@ -118,7 +246,7 @@ function route_(p, isWrite) {
       if (p.noteId) rows = rows.filter(r => r.NOTA_ID === p.noteId);
       return { success: true, data: rows.slice(-150) };
     }
-    if (a === 'createActivity') return createActivity_(p.data || {});
+    if (a === 'createActivity') return createActivity_(Object.assign({}, p.data || {}, { ACTOR: authenticatedUser }));
 
     // CHECKLIST
     if (a === 'getChecklist')        return { success: true, data: readAll_('CHECKLIST').filter(r => r.NOTA_ID === p.noteId) };
@@ -146,8 +274,28 @@ function route_(p, isWrite) {
     if (a === 'batchUpsertActivities') return batchUpsertActivities_(p.data || []);
     if (a === 'deleteActivity')   return del_('ACTIVIDADES', p.id);
 
-    if (a === 'upsertExecution')  return upsert_('EJECUCIONES', p.id || (p.data && p.data.ID), p.data || {});
-    if (a === 'batchUpsertExecutions') return batchUpsertExecutions_(p.data || []);
+    // EJECUCIONES: El backend sella el operador autenticado que realizó o modificó la acción
+    if (a === 'upsertExecution') {
+      const execData = Object.assign({}, p.data || {});
+      if (execData.ESTADO === 'REALIZADA' || execData.COMPLETADO_POR) {
+        execData.COMPLETADO_POR = authenticatedUser;
+        if (!execData.COMPLETADO_EN) execData.COMPLETADO_EN = new Date().toISOString();
+      }
+      return upsert_('EJECUCIONES', p.id || execData.ID, execData);
+    }
+
+    if (a === 'batchUpsertExecutions') {
+      const items = Array.isArray(p.data) ? p.data.map(item => {
+        const copy = Object.assign({}, item);
+        if (copy.ESTADO === 'REALIZADA' || copy.COMPLETADO_POR) {
+          copy.COMPLETADO_POR = authenticatedUser;
+          if (!copy.COMPLETADO_EN) copy.COMPLETADO_EN = new Date().toISOString();
+        }
+        return copy;
+      }) : [];
+      return batchUpsertExecutions_(items);
+    }
+
     if (a === 'deleteExecution')  return del_('EJECUCIONES', p.id);
 
     if (a === 'upsertEvent')      return upsert_('EVENTOS', p.id || (p.data && p.data.ID), p.data || {});

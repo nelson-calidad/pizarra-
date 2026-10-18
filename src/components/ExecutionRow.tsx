@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   Check, Clock, AlertTriangle, Play, Ban, RotateCcw, MessageSquarePlus,
   ExternalLink, MoreHorizontal, Edit3, Copy, PauseCircle, Calendar, Users,
-  CheckCircle2
+  CheckCircle2, Eye, Send, ClipboardCheck, CheckSquare
 } from 'lucide-react'
 import type { Activity, Execution, ExecStatus, Role } from '../types'
 import {
@@ -11,7 +11,7 @@ import {
 } from '../lib/dates'
 import {
   BRANCH_LABEL, BRANCH_SHORT, ROLE_LABEL,
-  getDefaultCompletionLabel
+  getDefaultCompletionLabel, getActionType, ACTION_TYPE_LABEL
 } from '../lib/labels'
 import {
   leadDaysFor, visualState, toggleAnyCompletion, toggleJointCompletion,
@@ -158,7 +158,18 @@ export function ExecutionRow({
           <div className="exec-title-line">
             {!hideTitle && (
               <span className="exec-name">
-                {activity?.name || execution.activityName || 'Actividad'}
+                <span
+                  className={`action-type-disc action-${getActionType(activity?.name || execution.activityName || '', activity?.category)}`}
+                  title={`Acción: ${ACTION_TYPE_LABEL[getActionType(activity?.name || execution.activityName || '', activity?.category)]}`}
+                  aria-label={ACTION_TYPE_LABEL[getActionType(activity?.name || execution.activityName || '', activity?.category)]}
+                >
+                  {getActionType(activity?.name || execution.activityName || '', activity?.category) === 'revisar' && <Eye size={12} strokeWidth={2.2} />}
+                  {getActionType(activity?.name || execution.activityName || '', activity?.category) === 'enviar' && <Send size={11} strokeWidth={2.2} />}
+                  {getActionType(activity?.name || execution.activityName || '', activity?.category) === 'controlar' && <ClipboardCheck size={12} strokeWidth={2.2} />}
+                  {getActionType(activity?.name || execution.activityName || '', activity?.category) === 'reunirse' && <Users size={12} strokeWidth={2.2} />}
+                  {getActionType(activity?.name || execution.activityName || '', activity?.category) === 'otra' && <CheckSquare size={12} strokeWidth={2.2} />}
+                </span>
+                <span>{activity?.name || execution.activityName || 'Actividad'}</span>
               </span>
             )}
 

@@ -186,3 +186,66 @@ export function getDefaultCompletionLabel(name?: string, custom?: string): strin
   return 'Hecho'
 }
 
+export type ActionType = 'revisar' | 'enviar' | 'controlar' | 'reunirse' | 'otra'
+
+export const ACTION_TYPE_LABEL: Record<ActionType, string> = {
+  revisar: 'Revisar',
+  enviar: 'Enviar',
+  controlar: 'Controlar / Verificar',
+  reunirse: 'Reunirse / Recorrida',
+  otra: 'Actividad'
+}
+
+export function getActionType(title: string, category?: string): ActionType {
+  const text = `${title} ${category || ''}`.toLowerCase()
+  if (
+    text.includes('revis') ||
+    text.includes('encuesta') ||
+    text.includes('ipsos') ||
+    text.includes('cem') ||
+    text.includes('ssi') ||
+    text.includes('csi') ||
+    text.includes('hot alert') ||
+    text.includes('analiz') ||
+    text.includes('muestre')
+  ) {
+    return 'revisar'
+  }
+  if (
+    text.includes('enviar') ||
+    text.includes('comunic') ||
+    text.includes('whatsapp') ||
+    text.includes('notific') ||
+    text.includes('solicit') ||
+    text.includes('informar') ||
+    text.includes('declarar') ||
+    text.includes('reportar')
+  ) {
+    return 'enviar'
+  }
+  if (
+    text.includes('control') ||
+    text.includes('verific') ||
+    text.includes('auditor') ||
+    text.includes('pcgc') ||
+    text.includes('iso') ||
+    text.includes('5s') ||
+    text.includes('residuos') ||
+    text.includes('taller') ||
+    text.includes('inspecc')
+  ) {
+    return 'controlar'
+  }
+  if (
+    text.includes('reun') ||
+    text.includes('comit') ||
+    text.includes('capacit') ||
+    text.includes('inducc') ||
+    text.includes('recorrida') ||
+    text.includes('visita')
+  ) {
+    return 'reunirse'
+  }
+  return 'otra'
+}
+

@@ -95,5 +95,53 @@ describe('cola de sincronización y merge multi-dispositivo', () => {
     expect(merged.find(x => x.id === 'EX3')?.note).toBe('Nueva en servidor')
     expect(merged.find(x => x.id === 'EX_LOCAL')?.status).toBe('EN_CURSO')
   })
+
+  it('gestiona sesión individual de RAC y Analista con token temporal', async () => {
+    const { login, logout, getAuthUser, getSessionToken, clearSession } = await import('../sheetsApi')
+    clearSession()
+    expect(getAuthUser()).toBeNull()
+    expect(getSessionToken()).toBe('')
+
+    // Simulamos respuesta exitosa de login desde Apps Script
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      json: () => Promise.resolve({
+        success: true,
+        user: 'RAC',
+        token: 'test-session-token-12345',
+        expiresAt: '2026-11-01T00:00:00Z'
+      })
+    })))
+
+    const res = await login('RAC', 'RacAutosol2026!')
+    expect(res.success).toBe(true)
+    expect(res.user).toBe('RAC')
+    expect(getAuthUser()).toBe('RAC')
+    expect(getSessionToken()).toBe('test-session-token-12345')
+
+    // Logout
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      json: () => Promise.resolve({ success: true })
+    })))
+
+    await logout()
+    expect(getAuthUser()).toBeNull()
+    expect(getSessionToken()).toBe('')
+  })
+})
+
+describe('identificadores visuales de tipo de acción', () => {
+  it('clasifica correctamente títulos y categorías en los 5 tipos discretos', async () => {
+    const { getActionType } = await import('../../lib/labels')
+    expect(getActionType('Revisar encuestas IPSOS', 'Indicadores')).toBe('revisar')
+    expect(getActionType('CEM Ventas y Posventa', 'Indicadores')).toBe('revisar')
+    expect(getActionType('Comunicar indicadores por WhatsApp', 'Comunicaciones')).toBe('enviar')
+    expect(getActionType('Enviar informe mensual', 'Comunicaciones')).toBe('enviar')
+    expect(getActionType('Control y auditoría PCGC', 'Controles')).toBe('controlar')
+    expect(getActionType('Auditoría ISO 9001', 'Auditorías')).toBe('controlar')
+    expect(getActionType('Control de taller 5S', 'Controles')).toBe('controlar')
+    expect(getActionType('Reunión de comité de calidad', 'General')).toBe('reunirse')
+    expect(getActionType('Recorrida operativa Salta', 'General')).toBe('reunirse')
+    expect(getActionType('Actualización de manual operativo', 'Procesos')).toBe('otra')
+  })
 })
 

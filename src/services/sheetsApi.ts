@@ -3,7 +3,7 @@
 // - "Sincronizado" sólo se informa cuando la cola está vacía y Sheets confirmó todo.
 // - La URL y la clave de acceso se configuran en la app (no se compilan secretos en el frontend).
 
-import type { Note, ChecklistItem, Person, ActivityEntry, PlannerData, SyncOp, SyncStatus } from '../types'
+import type { Note, ChecklistItem, Person, ActivityEntry, PlannerData, Role, SyncOp, SyncStatus } from '../types'
 import {
   fromSheet, fromSheetPerson, fromSheetActivity, fromSheetChecklist,
   activityFromSheet, executionFromSheet, eventFromSheet
@@ -13,6 +13,8 @@ export { toSheet } from './mappers'
 
 const LS_URL = 'mi-tablero-api-url'
 const LS_KEY = 'mi-tablero-api-key'
+const LS_SESSION_TOKEN = 'mi-tablero-session-token'
+const LS_AUTH_USER = 'mi-tablero-auth-user'
 const LS_QUEUE = 'mi-tablero-sync-queue'
 const LS_FAILED = 'mi-tablero-sync-failed'
 
@@ -38,6 +40,25 @@ export function getApiUrl(): string {
 export function getAccessKey(): string {
   return (ls.get(LS_KEY) || '').trim()
 }
+export function getSessionToken(): string {
+  return (ls.get(LS_SESSION_TOKEN) || '').trim()
+}
+export function getAuthUser(): Role | null {
+  const u = (ls.get(LS_AUTH_USER) || '').trim().toUpperCase()
+  return u === 'RAC' || u === 'ANALISTA' ? (u as Role) : null
+}
+export function setSession(token: string, user: Role) {
+  ls.set(LS_SESSION_TOKEN, token.trim())
+  ls.set(LS_AUTH_USER, user)
+  authFailed = false
+  notify()
+}
+export function clearSession() {
+  ls.del(LS_SESSION_TOKEN)
+  ls.del(LS_AUTH_USER)
+  notify()
+}
+
 export function setConnection(url: string, key: string) {
   if (url.trim() && url.trim() !== envUrl) ls.set(LS_URL, url.trim())
   else ls.del(LS_URL)
@@ -67,6 +88,7 @@ let flushing = false
 let offline = false
 let authFailed = false
 let lastError = ''
+let lastConfirmedAt: number | null = null
 let retryTimer: ReturnType<typeof setTimeout> | null = null
 
 const persist = () => {
@@ -79,6 +101,7 @@ export type SyncSnapshot = {
   pending: number
   failed: number
   lastError: string
+  lastConfirmedAt: number | null
 }
 
 export const syncListeners: Set<(s: SyncSnapshot) => void> = new Set()
@@ -91,8 +114,9 @@ export function getSyncSnapshot(): SyncSnapshot {
   else if (offline && queue.length) status = 'offline'
   else if (failed.length) status = 'error'
   else if (queue.length) status = lastError ? 'error' : 'pending'
+  else if (!lastConfirmedAt) status = 'local'
   else status = 'idle'
-  return { status, pending: queue.length, failed: failed.length, lastError }
+  return { status, pending: queue.length, failed: failed.length, lastError, lastConfirmedAt }
 }
 
 const notify = () => {
@@ -105,7 +129,15 @@ const scheduleRetry = (ms: number) => {
   retryTimer = setTimeout(() => { retryTimer = null; void flushQueue() }, ms)
 }
 
-type ApiResponse = { success: boolean; data?: unknown; error?: string; code?: number }
+type ApiResponse = {
+  success: boolean
+  data?: unknown
+  error?: string
+  code?: number
+  token?: string
+  user?: string
+  expiresAt?: string
+}
 
 class NetworkError extends Error {}
 class AuthError extends Error {}
@@ -113,12 +145,20 @@ class AuthError extends Error {}
 async function post(body: Record<string, unknown>): Promise<ApiResponse> {
   const url = getApiUrl()
   let res: Response
+  const payload: Record<string, unknown> = { ...body }
+  const token = getSessionToken()
+  if (token && !payload.token) payload.token = token
+  const key = getAccessKey()
+  if (key && !payload.key) payload.key = key
+  const authUser = getAuthUser()
+  if (authUser && !payload.user && payload.action !== 'login') payload.user = authUser
+
   try {
     res = await fetch(url, {
       method: 'POST',
       // text/plain evita el preflight CORS que Apps Script no soporta.
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ ...body, key: getAccessKey() || undefined })
+      body: JSON.stringify(payload)
     })
   } catch (e) {
     throw new NetworkError(e instanceof Error ? e.message : 'Sin conexión')
@@ -129,8 +169,58 @@ async function post(body: Record<string, unknown>): Promise<ApiResponse> {
   } catch {
     throw new NetworkError('Respuesta inválida del servidor')
   }
-  if (!json.success && (json.code === 401 || json.error === 'NO_AUTORIZADO')) throw new AuthError('Clave de acceso inválida')
+  if (!json.success && (json.code === 401 || json.error === 'NO_AUTORIZADO')) {
+    authFailed = true
+    notify()
+    throw new AuthError('Sesión no autorizada o expirada')
+  }
   return json
+}
+
+export async function login(
+  user: Role,
+  password: string
+): Promise<{ success: boolean; user?: Role; error?: string }> {
+  try {
+    const res = await post({ action: 'login', user, password })
+    if (res.success && typeof res.token === 'string' && typeof res.user === 'string') {
+      setSession(res.token, res.user as Role)
+      lastConfirmedAt = Date.now()
+      notify()
+      return { success: true, user: res.user as Role }
+    }
+    return { success: false, error: res.error || 'Credenciales inválidas' }
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'Error al conectar' }
+  }
+}
+
+export async function logout(): Promise<void> {
+  try {
+    const token = getSessionToken()
+    if (token) await post({ action: 'logout', token })
+  } catch {
+    // Silencioso
+  } finally {
+    clearSession()
+  }
+}
+
+export async function checkSession(): Promise<boolean> {
+  const token = getSessionToken()
+  if (!token) return false
+  try {
+    const res = await post({ action: 'checkSession', token })
+    if (res.success && res.user) {
+      lastConfirmedAt = Date.now()
+      notify()
+      return true
+    }
+    clearSession()
+    return false
+  } catch {
+    return !!getAuthUser()
+  }
 }
 
 /** Errores definitivos (no tiene sentido reintentar). */
@@ -180,6 +270,7 @@ export async function flushQueue(): Promise<void> {
       queue.shift()
       offline = false
       lastError = ''
+      lastConfirmedAt = Date.now()
       persist()
     } catch (e) {
       if (e instanceof AuthError) {
@@ -194,6 +285,9 @@ export async function flushQueue(): Promise<void> {
       scheduleRetry(Math.min(4000 * op.retries, 60000))
       break
     }
+  }
+  if (!queue.length && !failed.length && !offline && !authFailed) {
+    lastConfirmedAt = Date.now()
   }
   flushing = false
   notify()
@@ -288,18 +382,20 @@ if (typeof window !== 'undefined') {
   setInterval(() => { if (queue.length && !flushing) void flushQueue() }, 30000)
 }
 
-// ---------------- Lecturas ----------------
+// ---------------- Lecturas (utilizan POST body sin exponer secretos en URL) ----------------
 
 async function get(action: string, params: Record<string, string> = {}): Promise<unknown> {
   const url = getApiUrl()
   if (!url) return null
-  const qs = new URLSearchParams({ action, ...params })
-  const key = getAccessKey()
-  if (key) qs.set('key', key)
   let r: ApiResponse
   try {
-    r = await fetch(`${url}?${qs.toString()}`).then(x => x.json())
+    r = await post({ action, ...params })
   } catch (e) {
+    if (e instanceof AuthError) {
+      authFailed = true
+      notify()
+      throw e
+    }
     offline = true
     notify()
     throw e
@@ -311,6 +407,7 @@ async function get(action: string, params: Record<string, string> = {}): Promise
     }
     throw new Error(r.error || 'Error al leer datos')
   }
+  lastConfirmedAt = Date.now()
   if (offline || authFailed) {
     offline = false
     authFailed = false
@@ -361,6 +458,7 @@ export function __resetForTests() {
   offline = false
   authFailed = false
   lastError = ''
+  lastConfirmedAt = null
   if (retryTimer) clearTimeout(retryTimer)
   retryTimer = null
 }

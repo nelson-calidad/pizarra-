@@ -85,6 +85,11 @@ export function AgendaSection({
   const [showCatalog, setShowCatalog] = useState(false)
   const [showCompletedToday, setShowCompletedToday] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [collapsedBuckets, setCollapsedBuckets] = useState<Record<string, boolean>>({})
+
+  const toggleBucket = (name: string) => {
+    setCollapsedBuckets(prev => ({ ...prev, [name]: !prev[name] }))
+  }
 
   // Fecha de referencia para Semana y Mes
   const [weekRef, setWeekRef] = useState(today)
@@ -193,13 +198,15 @@ export function AgendaSection({
     return Array.from(map.entries())
       .filter(([, items]) => items.length > 0)
       .map(([name, items]) => {
+        const totalActivities = items.length
+        const totalFulfillments = items.reduce((acc, g) => acc + g.items.length, 0)
         const pendingCount = items.reduce(
           (acc, g) =>
             acc +
             g.items.filter(e => e.status !== 'REALIZADA' && e.status !== 'NO_REALIZADA').length,
           0
         )
-        return { name, items, pendingCount }
+        return { name, items, totalActivities, totalFulfillments, pendingCount }
       })
   }, [groupedTodayTasks])
 
@@ -468,34 +475,58 @@ export function AgendaSection({
               </div>
             ) : todayCategoryBuckets ? (
               <div className="today-categorized-list">
-                {todayCategoryBuckets.map(bucket => (
-                  <div key={bucket.name} className="today-cat-block">
-                    <div className="today-cat-header">
-                      <span className="today-cat-title">{bucket.name}</span>
-                      <span className="today-cat-count">
-                        {bucket.pendingCount} {bucket.pendingCount === 1 ? 'pendiente' : 'pendientes'}
-                      </span>
+                {todayCategoryBuckets.map(bucket => {
+                  const isCollapsed = !!collapsedBuckets[bucket.name]
+                  return (
+                    <div key={bucket.name} className={`today-cat-block ${isCollapsed ? 'is-collapsed' : ''}`}>
+                      <div
+                        className="today-cat-header clickable"
+                        onClick={() => toggleBucket(bucket.name)}
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={!isCollapsed}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBucket(bucket.name) } }}
+                      >
+                        <div className="today-cat-header-left">
+                          <span className="today-cat-chevron">
+                            {isCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+                          </span>
+                          <span className="today-cat-title">{bucket.name}</span>
+                        </div>
+                        <div className="today-cat-header-right">
+                          <span className="today-cat-counts">
+                            {bucket.totalActivities} {bucket.totalActivities === 1 ? 'actividad' : 'actividades'} · {bucket.totalFulfillments} {bucket.totalFulfillments === 1 ? 'cumplimiento' : 'cumplimientos'}
+                          </span>
+                          <span className={`today-cat-count-badge ${bucket.pendingCount > 0 ? 'is-pending' : 'is-done'}`}>
+                            {bucket.pendingCount > 0
+                              ? `${bucket.pendingCount} ${bucket.pendingCount === 1 ? 'pendiente' : 'pendientes'}`
+                              : 'Al día'}
+                          </span>
+                        </div>
+                      </div>
+                      {!isCollapsed && (
+                        <div className="exec-group-list">
+                          {bucket.items.map(group => (
+                            <GroupedExecutionCard
+                              key={group.activityId}
+                              group={group}
+                              today={today}
+                              currentUser={currentUser}
+                              onChangeStatus={onChangeStatus}
+                              onChangeExecutor={onChangeExecutor}
+                              onReschedule={onRescheduleExecution}
+                              onSaveObservation={onSaveObservation}
+                              onSelect={onSelectExecution}
+                              onEditActivity={onEditActivity}
+                              onDuplicateActivity={onDuplicateActivity}
+                              onTogglePauseActivity={onTogglePauseActivity}
+                            />
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="exec-group-list">
-                      {bucket.items.map(group => (
-                        <GroupedExecutionCard
-                          key={group.activityId}
-                          group={group}
-                          today={today}
-                          currentUser={currentUser}
-                          onChangeStatus={onChangeStatus}
-                          onChangeExecutor={onChangeExecutor}
-                          onReschedule={onRescheduleExecution}
-                          onSaveObservation={onSaveObservation}
-                          onSelect={onSelectExecution}
-                          onEditActivity={onEditActivity}
-                          onDuplicateActivity={onDuplicateActivity}
-                          onTogglePauseActivity={onTogglePauseActivity}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <div className="exec-group-list">

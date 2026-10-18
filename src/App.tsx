@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   LayoutGrid, CalendarDays, Search, Plus, Settings, X,
-  User, Users, StickyNote, CalendarClock
+  User, Users, StickyNote, CalendarClock, LogOut
 } from 'lucide-react'
 import './App.css'
 
@@ -10,7 +10,8 @@ import type {
 } from './types'
 import {
   enqueue, fetchNotes, fetchPeople, fetchPlanner, getSyncSnapshot,
-  mergeWithPending, retryNow, syncListeners, toSheet, type SyncSnapshot
+  mergeWithPending, retryNow, syncListeners, toSheet, type SyncSnapshot,
+  getAuthUser, getSessionToken, logout, checkSession
 } from './services/sheetsApi'
 import {
   activityToSheet, eventToSheet, executionToSheet
@@ -29,6 +30,7 @@ import { ActivityModal } from './components/ActivityModal'
 import { ExecutionDetail } from './components/ExecutionDetail'
 import { EventsPanel } from './components/EventsPanel'
 import { SettingsModal } from './components/SettingsModal'
+import { LoginModal } from './components/LoginModal'
 
 const BASE_PEOPLE = ['Nelson', 'Melisa Condori', 'Equipo']
 
@@ -62,15 +64,23 @@ export default function App() {
   // Navegación principal: únicamente DOS secciones (Agenda y Pizarra). Vista inicial: Agenda (Hoy)
   const [section, setSection] = useState<Section>('agenda')
 
+  // Autenticación individual verificada en Apps Script
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return !!getAuthUser() && !!getSessionToken()
+  })
+
   // Rol del operador en este dispositivo (RAC o ANALISTA)
   const [currentUser, setCurrentUser] = useState<Role>(() => {
-    const saved = localStorage.getItem('mi-tablero-role')
-    return saved === 'ANALISTA' ? 'ANALISTA' : 'RAC'
+    return getAuthUser() || 'RAC'
   })
 
   useEffect(() => {
-    localStorage.setItem('mi-tablero-role', currentUser)
-  }, [currentUser])
+    if (isAuthenticated) {
+      void checkSession().then(ok => {
+        if (!ok) setIsAuthenticated(false)
+      })
+    }
+  }, [isAuthenticated])
 
   // Filtros discretos de Agenda (Todos / RAC / Analista · Ambas / Jujuy / Salta)
   const [personFilter, setPersonFilter] = useState<Role | 'TODOS'>('TODOS')
@@ -579,6 +589,18 @@ export default function App() {
 
   const sync = useSyncSnapshot()
 
+  if (!isAuthenticated) {
+    return (
+      <LoginModal
+        initialUser={currentUser}
+        onLoginSuccess={user => {
+          setCurrentUser(user)
+          setIsAuthenticated(true)
+        }}
+      />
+    )
+  }
+
   return (
     <div className="app">
       {/* BARRA LATERAL MINIMALISTA: ÚNICAMENTE 2 SECCIONES (AGENDA Y PIZARRA) */}
@@ -708,7 +730,7 @@ export default function App() {
             {sync.status === 'idle' && (
               <>
                 <span className="status-indicator" />
-                <span>Sincronizado</span>
+                <span>Guardado en Sheets</span>
               </>
             )}
             {sync.status === 'local' && (
@@ -717,35 +739,29 @@ export default function App() {
                 <span>Guardado local</span>
               </>
             )}
-            {sync.status === 'saving' && (
+            {(sync.status === 'saving' || sync.status === 'pending') && (
               <>
                 <span className="status-indicator status-saving" />
-                <span>Sincronizando ({sync.pending})…</span>
-              </>
-            )}
-            {sync.status === 'pending' && (
-              <>
-                <span className="status-indicator status-saving" />
-                <span>Pendiente ({sync.pending})</span>
+                <span>Guardando{sync.pending > 1 ? ` (${sync.pending})` : ''}…</span>
               </>
             )}
             {sync.status === 'offline' && (
               <>
                 <span className="status-indicator status-error" />
-                <span>Sin red ({sync.pending} en cola)</span>
+                <span>Sin conexión — {sync.pending} {sync.pending === 1 ? 'pendiente' : 'pendientes'}</span>
               </>
             )}
             {sync.status === 'auth' && (
               <>
                 <span className="status-indicator status-error" />
-                <button onClick={() => setSettingsOpen(true)}>Clave requerida</button>
+                <button onClick={() => setIsAuthenticated(false)}>Acceso requerido</button>
               </>
             )}
             {sync.status === 'error' && (
               <>
                 <span className="status-indicator status-error" />
                 <span>
-                  Error ({sync.pending + sync.failed}) —{' '}
+                  Error de guardado —{' '}
                   <button onClick={retryNow}>Reintentar</button>
                 </span>
               </>
@@ -758,7 +774,7 @@ export default function App() {
             onClick={() => setSettingsOpen(true)}
           >
             <Settings size={15} strokeWidth={1.8} />
-            <span>Configuración · {ROLE_LABEL[currentUser]}</span>
+            <span>Configuración</span>
           </button>
         </footer>
       </aside>
@@ -767,22 +783,21 @@ export default function App() {
       <main className="main-content">
         <header className="app-header">
           <div className="header-left-controls">
-            {/* Selector de operador activo */}
-            <div className="operator-pill" title="Quién está operando ahora">
-              <span className="operator-label">Operador:</span>
+            {/* Usuario autenticado discreto y botón de cerrar sesión */}
+            <div className="header-user-pill" title={`Sesión activa: ${ROLE_LABEL[currentUser]}`}>
+              <span className="user-disc-badge">{currentUser === 'RAC' ? 'R' : 'A'}</span>
+              <span className="user-name-label">{ROLE_LABEL[currentUser]}</span>
               <button
                 type="button"
-                className={`operator-btn ${currentUser === 'RAC' ? 'active' : ''}`}
-                onClick={() => setCurrentUser('RAC')}
+                className="btn-header-logout"
+                onClick={async () => {
+                  await logout()
+                  setIsAuthenticated(false)
+                }}
+                title="Cerrar sesión"
               >
-                RAC
-              </button>
-              <button
-                type="button"
-                className={`operator-btn ${currentUser === 'ANALISTA' ? 'active' : ''}`}
-                onClick={() => setCurrentUser('ANALISTA')}
-              >
-                Analista
+                <LogOut size={13} />
+                <span>Salir</span>
               </button>
             </div>
           </div>

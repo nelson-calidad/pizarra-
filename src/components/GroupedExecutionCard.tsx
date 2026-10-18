@@ -1,7 +1,7 @@
-import { Users, CheckCircle2, Check } from 'lucide-react'
+import { Users, CheckCircle2, Check, Eye, Send, ClipboardCheck, CheckSquare } from 'lucide-react'
 import type { Activity, Execution, ExecStatus, Role } from '../types'
 import { ExecutionRow } from './ExecutionRow'
-import { describeRule } from '../lib/labels'
+import { describeRule, getActionType, ACTION_TYPE_LABEL } from '../lib/labels'
 import type { GroupedExecutionCard as GroupType } from '../lib/planner'
 
 type Props = {
@@ -38,6 +38,7 @@ export function GroupedExecutionCard({
   const act = group.activity
   const mode = act?.completionMode || group.items[0]?.completionMode || 'CUALQUIERA'
   const allCompleted = group.items.length > 0 && group.items.every(ex => ex.status === 'REALIZADA')
+  const actionType = getActionType(group.activityName, act?.category)
 
   // Descripción legible de frecuencia o regla sin categorías concatenadas
   const recurrenceSubtitle = act
@@ -56,7 +57,20 @@ export function GroupedExecutionCard({
     <div className={`grouped-activity-card ${allCompleted ? 'is-card-completed' : ''}`}>
       <div className="grouped-card-header" onClick={handleHeaderClick}>
         <div className="grouped-card-header-left">
-          <h3 className="grouped-card-title">{group.activityName}</h3>
+          <h3 className="grouped-card-title">
+            <span
+              className={`action-type-disc action-${actionType}`}
+              title={`Acción: ${ACTION_TYPE_LABEL[actionType]}`}
+              aria-label={ACTION_TYPE_LABEL[actionType]}
+            >
+              {actionType === 'revisar' && <Eye size={12} strokeWidth={2.2} />}
+              {actionType === 'enviar' && <Send size={11} strokeWidth={2.2} />}
+              {actionType === 'controlar' && <ClipboardCheck size={12} strokeWidth={2.2} />}
+              {actionType === 'reunirse' && <Users size={12} strokeWidth={2.2} />}
+              {actionType === 'otra' && <CheckSquare size={12} strokeWidth={2.2} />}
+            </span>
+            <span>{group.activityName}</span>
+          </h3>
           <div className="grouped-card-subline">
             {recurrenceSubtitle && (
               <span className="grouped-card-freq">{recurrenceSubtitle}</span>

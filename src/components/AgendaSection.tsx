@@ -9,14 +9,15 @@ import type {
 } from '../types'
 import {
   addDays, capitalize, daysInMonth, endOfMonth, fromParts, longDate,
-  monthLabel, parseISO, shortDate, weekday, weekdayName, isValidISO, weekdayNameByIndex
+  monthLabel, parseISO, shortDate, weekday, weekdayName, isValidISO, weekdayNameByIndex,
+  isWeekend
 } from '../lib/dates'
 import {
-  BRANCH_LABEL, BRANCH_SHORT, eventTypeLabel, FREQ_LABEL, ROLE_LABEL
+  BRANCH_LABEL, eventTypeLabel, FREQ_LABEL, ROLE_LABEL
 } from '../lib/labels'
 import {
   buildExecutions, buildTodayView, buildWeekView, buildBacklogView,
-  groupExecutionsByActivity, leadDaysFor, matchesFilter, visualState,
+  groupExecutionsByActivity, matchesFilter,
   type DailyBacklogGroup
 } from '../lib/planner'
 import { ExecutionRow } from './ExecutionRow'
@@ -891,44 +892,68 @@ export function AgendaSection({
                 {Array.from({ length: totalDays }, (_, i) => {
                   const day = i + 1
                   const ds = fromParts(calYear, calMonth, day)
-                  // En las celdas del calendario NO mostramos todas las diarias para no saturar (Punto 6);
-                  // sí mostramos los hitos/controles no diarios y un indicador compacto del total del día.
-                  const dayAllExecs = monthExecutions.filter(
-                    e =>
+                  const isWknd = isWeekend(ds)
+
+                  // En las celdas del mes: si es fin de semana, excluimos actividades exclusivas
+                  // de días hábiles (businessDaysOnly) no realizadas para no generar falsas obligaciones.
+                  const dayAllExecs = monthExecutions.filter(e => {
+                    const act = actMap.get(e.activityId)
+                    if (isWknd && act?.businessDaysOnly && e.status !== 'REALIZADA') {
+                      return false
+                    }
+                    return (
                       e.dueDate === ds ||
-                      (e.windowStart && e.windowStart <= ds && ds <= e.dueDate && e.dueDate === ds)
-                  )
-                  const nonDailyExecs = dayAllExecs.filter(
-                    e => actMap.get(e.activityId)?.frequency !== 'DIARIA'
-                  )
-                  const dailyCount = dayAllExecs.length - nonDailyExecs.length
+                      (e.windowStart && e.windowStart <= ds && ds <= e.dueDate && !act?.flexible)
+                    )
+                  })
+
                   const dayEvents = monthEvents.filter(ev => ev.date === ds)
                   const dayNotes = notes.filter(
                     n => n.status !== 'ARCHIVADO' && n.date === ds
                   )
 
-                  const hasOverdue = dayAllExecs.some(
-                    e => visualState(e, today, leadDaysFor(actMap.get(e.activityId))) === 'overdue'
-                  )
+                  // Vencidas reales (únicamente si la fecha límite es anterior a hoy y aún no se cumplió)
+                  const realOverdueCount = dayAllExecs.filter(
+                    e => e.dueDate < today && e.status !== 'REALIZADA' && e.status !== 'NO_REALIZADA'
+                  ).length
+
                   const allDone =
                     dayAllExecs.length > 0 &&
                     dayAllExecs.every(e => e.status === 'REALIZADA')
+
+                  const pendingCount = dayAllExecs.filter(
+                    e => e.status !== 'REALIZADA' && e.status !== 'NO_REALIZADA'
+                  ).length
+
+                  const nonDailyPending = dayAllExecs.filter(
+                    e => actMap.get(e.activityId)?.frequency !== 'DIARIA' && e.status !== 'REALIZADA'
+                  )
 
                   return (
                     <div
                       key={day}
                       className={`cal-cell ${ds === today ? 'now' : ''} ${
                         ds === selectedCalDate ? 'cal-cell-selected' : ''
-                      }`}
+                      } ${isWknd ? 'cal-cell-weekend' : ''}`}
                       onClick={() => setSelectedCalDate(ds)}
                     >
                       <div className="cell-header">
                         <span className="cell-num">{day}</span>
                         <div className="cell-dots-indicator">
-                          {hasOverdue && <span className="mini-dot dot-overdue" title="Con vencidas" />}
-                          {allDone && <span className="mini-dot dot-done" title="Todo realizado" />}
-                          {dayAllExecs.length > 0 && (
-                            <span className="cell-count-tag">{dayAllExecs.length}</span>
+                          {realOverdueCount > 0 && (
+                            <span className="mini-dot dot-overdue" title={`${realOverdueCount} vencida(s) real(es)`}>
+                              !
+                            </span>
+                          )}
+                          {allDone && (
+                            <span className="mini-dot dot-done" title="Todo realizado">
+                              ✓
+                            </span>
+                          )}
+                          {pendingCount > 0 && realOverdueCount === 0 && (
+                            <span className="cell-count-tag" title={`${pendingCount} pendiente(s)`}>
+                              {pendingCount}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -944,33 +969,42 @@ export function AgendaSection({
                           </div>
                         ))}
 
-                        {nonDailyExecs.slice(0, 2).map(ex => {
-                          const act = actMap.get(ex.activityId)
-                          const v = visualState(ex, today, leadDaysFor(act), act)
-                          return (
+                        {realOverdueCount > 0 ? (
+                          <div className="cal-cell-chip chip-overdue" title={`${realOverdueCount} actividad(es) vencida(s)`}>
+                            <span className="chip-dot dot-overdue" />
+                            <span>{realOverdueCount} {realOverdueCount === 1 ? 'vencida' : 'vencidas'}</span>
+                          </div>
+                        ) : allDone ? (
+                          <div className="cal-cell-chip chip-done" title="Todas las actividades realizadas">
+                            <span className="chip-dot dot-done" />
+                            <span>Al día</span>
+                          </div>
+                        ) : nonDailyPending.length > 0 ? (
+                          <>
                             <div
-                              key={ex.id}
-                              className={`cal-exec-pill cal-exec-${v}`}
-                              title={`${act?.name || ex.activityName} (${BRANCH_SHORT[ex.branch]})`}
+                              className="cal-cell-chip chip-pending"
+                              title={actMap.get(nonDailyPending[0].activityId)?.name || nonDailyPending[0].activityName}
                             >
-                              <span className={`cal-exec-dot dot-${v}`} />
-                              <span className="cal-note-text">
-                                {act?.name || ex.activityName}
+                              <span className="chip-dot dot-pending" />
+                              <span className="chip-text">
+                                {actMap.get(nonDailyPending[0].activityId)?.name || nonDailyPending[0].activityName}
                               </span>
                             </div>
-                          )
-                        })}
+                            {dayAllExecs.length > 1 && (
+                              <small className="cal-more">+{dayAllExecs.length - 1} más</small>
+                            )}
+                          </>
+                        ) : pendingCount > 0 ? (
+                          <div className="cal-cell-chip chip-pending">
+                            <span className="chip-dot dot-pending" />
+                            <span>{pendingCount} {pendingCount === 1 ? 'actividad' : 'actividades'}</span>
+                          </div>
+                        ) : null}
 
-                        {nonDailyExecs.length > 2 && (
-                          <small className="cal-more">
-                            +{nonDailyExecs.length - 2} más
-                          </small>
-                        )}
-                        {nonDailyExecs.length === 0 && dailyCount > 0 && (
-                          <small className="cal-more">{dailyCount} diaria(s)</small>
-                        )}
                         {dayNotes.length > 0 && (
-                          <small className="cal-more">{dayNotes.length} nota(s)</small>
+                          <small className="cal-more cal-more-notes">
+                            {dayNotes.length} {dayNotes.length === 1 ? 'nota' : 'notas'}
+                          </small>
                         )}
                       </div>
                     </div>
@@ -984,14 +1018,19 @@ export function AgendaSection({
               selectedDate={selectedCalDate}
               today={today}
               currentUser={currentUser}
-              executions={monthExecutions.filter(
-                e =>
+              executions={monthExecutions.filter(e => {
+                const act = actMap.get(e.activityId)
+                if (isWeekend(selectedCalDate) && act?.businessDaysOnly && e.status !== 'REALIZADA') {
+                  return false
+                }
+                return (
                   e.dueDate === selectedCalDate ||
                   (e.windowStart &&
                     e.windowStart <= selectedCalDate &&
                     selectedCalDate <= e.dueDate &&
-                    !actMap.get(e.activityId)?.flexible)
-              )}
+                    !act?.flexible)
+                )
+              })}
               events={monthEvents.filter(ev => ev.date === selectedCalDate)}
               notes={notes.filter(
                 n => n.status !== 'ARCHIVADO' && n.date === selectedCalDate
@@ -1005,6 +1044,9 @@ export function AgendaSection({
               onSelectNote={onSelectNote}
               onOpenEvents={onOpenEvents}
               onOpenNewActivity={onOpenNewActivity}
+              onEditActivity={onEditActivity}
+              onDuplicateActivity={onDuplicateActivity}
+              onTogglePauseActivity={onTogglePauseActivity}
             />
           </div>
         </div>
@@ -1160,7 +1202,10 @@ function SelectedDayPanel({
   onSelectExecution,
   onSelectNote,
   onOpenEvents,
-  onOpenNewActivity
+  onOpenNewActivity,
+  onEditActivity,
+  onDuplicateActivity,
+  onTogglePauseActivity
 }: {
   selectedDate: string
   today: string
@@ -1177,7 +1222,15 @@ function SelectedDayPanel({
   onSelectNote: (n: Note) => void
   onOpenEvents: () => void
   onOpenNewActivity: (prefill?: Partial<Activity>) => void
+  onEditActivity?: (act: Activity) => void
+  onDuplicateActivity?: (act: Activity) => void
+  onTogglePauseActivity?: (act: Activity) => void
 }) {
+  const groupedExecs = useMemo(
+    () => groupExecutionsByActivity(executions, actMap),
+    [executions, actMap]
+  )
+
   return (
     <div className="cal-day-drawer month-side-panel">
       <div className="exec-group-header">
@@ -1198,23 +1251,24 @@ function SelectedDayPanel({
           </div>
         ))}
 
-        {executions.length === 0 && events.length === 0 && notes.length === 0 ? (
+        {groupedExecs.length === 0 && events.length === 0 && notes.length === 0 ? (
           <p className="week-day-empty">No hay actividades programadas para este día.</p>
         ) : (
           <div className="exec-group-list">
-            {executions.map(ex => (
-              <ExecutionRow
-                key={ex.id}
-                execution={ex}
-                activity={actMap.get(ex.activityId)}
+            {groupedExecs.map(group => (
+              <GroupedExecutionCard
+                key={group.key}
+                group={group}
                 today={today}
                 currentUser={currentUser}
-                compact={ex.status === 'REALIZADA'}
                 onChangeStatus={onChangeStatus}
                 onChangeExecutor={onChangeExecutor}
                 onReschedule={onRescheduleExecution}
                 onSaveObservation={onSaveObservation}
                 onSelect={onSelectExecution}
+                onEditActivity={onEditActivity}
+                onDuplicateActivity={onDuplicateActivity}
+                onTogglePauseActivity={onTogglePauseActivity}
               />
             ))}
           </div>

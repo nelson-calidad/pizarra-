@@ -673,7 +673,39 @@ describe('Etapa 5: Vista Anteriores, Sucursales independientes y Cumplimiento si
     const oldOccurrences = execs.filter(e => e.activityId === 'act-diaria-restaurada' && e.dueDate < '2026-10-16')
     expect(oldOccurrences.length).toBe(0)
   })
+
+  it('groupExecutionsByActivity agrupa ejecuciones de Jujuy y Salta de la misma actividad', () => {
+    const act = base({ id: 'act-ambas', name: 'Revisión IPSOS', branch: 'AMBAS', splitBranches: true })
+    const exJujuy: Execution = {
+      id: 'ex-j',
+      activityId: 'act-ambas',
+      period: '2026-10-18',
+      branch: 'JUJUY',
+      dueDate: '2026-10-18',
+      executor: 'RAC',
+      status: 'PENDIENTE',
+      createdAt: '2026-10-18'
+    }
+    const exSalta: Execution = {
+      id: 'ex-s',
+      activityId: 'act-ambas',
+      period: '2026-10-18',
+      branch: 'SALTA',
+      dueDate: '2026-10-18',
+      executor: 'RAC',
+      status: 'REALIZADA',
+      createdAt: '2026-10-18'
+    }
+
+    const groups = groupExecutionsByActivity([exJujuy, exSalta], [act])
+    expect(groups.length).toBe(1)
+    expect(groups[0].activityName).toBe('Revisión IPSOS')
+    expect(groups[0].items.length).toBe(2)
+    expect(groups[0].items.map(i => i.branch)).toContain('JUJUY')
+    expect(groups[0].items.map(i => i.branch)).toContain('SALTA')
+  })
 })
+
 
 
 

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   LayoutGrid, CalendarDays, Search, Plus, Settings, X,
-  User, Users, StickyNote, CalendarClock, LogOut
+  User, Users, StickyNote, CalendarClock, LogOut, MoreVertical, Edit3, Trash2
 } from 'lucide-react'
 import './App.css'
 
 import type {
-  Activity, BranchScope, Execution, ExecStatus, Note, PlannerEvent, Role, Section
+  Activity, BranchScope, Execution, ExecStatus, Note, PlannerEvent, Role, Section, Person
 } from './types'
 import {
   enqueue, fetchNotes, fetchPeople, fetchPlanner, getSyncSnapshot,
@@ -32,7 +32,8 @@ import { EventsPanel } from './components/EventsPanel'
 import { SettingsModal } from './components/SettingsModal'
 import { LoginModal } from './components/LoginModal'
 
-const BASE_PEOPLE = ['Nelson', 'Melisa Condori', 'Equipo']
+const BASE_PEOPLE = ['Nelson', 'Analista']
+const LEGACY_REMOVED_PEOPLE = ['Melisa Condori', 'Equipo']
 
 function useSyncSnapshot(): SyncSnapshot {
   const [snap, setSnap] = useState<SyncSnapshot>(() => getSyncSnapshot())
@@ -90,15 +91,35 @@ export default function App() {
   // ---------------- Estado de Pizarra (Notas existentes conservadas) ----------------
   const [notes, setNotes] = useState<Note[]>(() => {
     const parsed = loadJSON<Note[]>('mi-tablero-notes', [])
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) return []
+    let migrated = false
+    const updated = parsed.map(n => {
+      if (n.assignee === 'Melisa Condori') {
+        migrated = true
+        return { ...n, assignee: 'Analista' }
+      }
+      return n
+    })
+    if (migrated) {
+      localStorage.setItem('mi-tablero-notes', JSON.stringify(updated))
+    }
+    return updated
   })
   const [boardFilter, setBoardFilter] = useState('Pendientes')
   const [activeMember, setActiveMember] = useState<string>('Todos')
   const [people, setPeople] = useState<string[]>(() => {
     const extra = loadJSON<string[]>('mi-tablero-people-extra', [])
-    const set = new Set([...BASE_PEOPLE, ...(Array.isArray(extra) ? extra : [])])
+    const deleted = new Set(loadJSON<string[]>('mi-tablero-deleted-people', []))
+    const validExtra = (Array.isArray(extra) ? extra : []).filter(
+      p => !LEGACY_REMOVED_PEOPLE.includes(p) && !deleted.has(p)
+    )
+    const set = new Set([...BASE_PEOPLE.filter(p => !deleted.has(p)), ...validExtra])
     return Array.from(set)
   })
+  const [peopleList, setPeopleList] = useState<Person[]>([])
+  const [personMenuOpen, setPersonMenuOpen] = useState<string | null>(null)
+  const [personToRemove, setPersonToRemove] = useState<string | null>(null)
+  const personMenuRef = useRef<HTMLDivElement>(null)
   const [selectedNote, setSelectedNote] = useState<Note | null>(null)
   const [noteComposer, setNoteComposer] = useState(false)
 
@@ -210,11 +231,30 @@ export default function App() {
         fetchPeople().catch(() => null)
       ])
       if (freshNotes && freshNotes.length > 0) {
-        setNotes(local => mergeWithPending(freshNotes, local))
+        const migrated = freshNotes.map(n => {
+          if (n.assignee === 'Melisa Condori') {
+            enqueue('updateNote', n.id, toSheet({ assignee: 'Analista' }))
+            return { ...n, assignee: 'Analista' }
+          }
+          return n
+        })
+        setNotes(local => mergeWithPending(migrated, local))
       }
       if (freshPeople && freshPeople.length > 0) {
+        setPeopleList(freshPeople)
+        // Purgar 'Melisa Condori' y 'Equipo' de Sheets si continúan activas en la base remota
+        freshPeople.forEach(p => {
+          if (LEGACY_REMOVED_PEOPLE.includes(p.name)) {
+            enqueue('deletePerson', p.id, { ACTIVO: false })
+          }
+        })
+        const deleted = new Set(loadJSON<string[]>('mi-tablero-deleted-people', []))
         setPeople(prev => {
-          const set = new Set([...BASE_PEOPLE, ...prev, ...freshPeople.map(x => x.name)])
+          const remoteActive = freshPeople
+            .filter(x => x.active !== false && !LEGACY_REMOVED_PEOPLE.includes(x.name) && !deleted.has(x.name))
+            .map(x => x.name)
+          const currentFiltered = prev.filter(p => !LEGACY_REMOVED_PEOPLE.includes(p) && !deleted.has(p))
+          const set = new Set([...BASE_PEOPLE.filter(p => !deleted.has(p)), ...currentFiltered, ...remoteActive])
           return Array.from(set)
         })
       }
@@ -283,6 +323,20 @@ export default function App() {
     }
   }, [section, isAuthenticated, reloadSecondaryData])
 
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (personMenuRef.current && !personMenuRef.current.contains(e.target as Node)) {
+        setPersonMenuOpen(null)
+      }
+    }
+    if (personMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [personMenuOpen])
+
   // Atajos de teclado
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -303,6 +357,8 @@ export default function App() {
         setActivityModal({ open: false })
         setEventsOpen(false)
         setSettingsOpen(false)
+        setPersonMenuOpen(null)
+        setPersonToRemove(null)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -331,8 +387,79 @@ export default function App() {
     const trimmed = name.trim()
     if (trimmed && !people.includes(trimmed)) {
       setPeople(prev => [...prev, trimmed])
-      enqueue('createPerson', undefined, { NOMBRE: trimmed })
+      const deleted = loadJSON<string[]>('mi-tablero-deleted-people', [])
+      if (deleted.includes(trimmed)) {
+        localStorage.setItem(
+          'mi-tablero-deleted-people',
+          JSON.stringify(deleted.filter(d => d !== trimmed))
+        )
+      }
+      const id = crypto.randomUUID()
+      enqueue('createPerson', id, { ID: id, NOMBRE: trimmed, ACTIVO: true })
     }
+  }
+
+  const renamePerson = (oldName: string, newName: string) => {
+    const trimmed = newName.trim()
+    if (!trimmed || trimmed === oldName) return
+    if (people.includes(trimmed)) {
+      window.alert(`Ya existe una persona con el nombre "${trimmed}".`)
+      return
+    }
+    setPeople(prev => prev.map(p => (p === oldName ? trimmed : p)))
+    const now = new Date().toISOString()
+    setNotes(list =>
+      list.map(n => {
+        if (n.assignee === oldName) {
+          enqueue('updateNote', n.id, toSheet({ assignee: trimmed, updatedAt: now }))
+          return { ...n, assignee: trimmed, updatedAt: now }
+        }
+        return n
+      })
+    )
+    const meta = peopleList.find(p => p.name.toLowerCase() === oldName.toLowerCase())
+    if (meta) {
+      enqueue('updatePerson', meta.id, { NOMBRE: trimmed, ACTUALIZADO_EN: now })
+    } else {
+      enqueue('createPerson', undefined, { NOMBRE: trimmed, ACTUALIZADO_EN: now })
+    }
+    if (activeMember === oldName) {
+      setActiveMember(trimmed)
+    }
+  }
+
+  const handlePromptRenamePerson = (oldName: string) => {
+    const next = window.prompt(`Nuevo nombre para ${oldName}:`, oldName)
+    if (next && next.trim()) {
+      renamePerson(oldName, next.trim())
+    }
+  }
+
+  const removePerson = (name: string, reassignTo?: string) => {
+    setPeople(prev => prev.filter(p => p !== name))
+    const deleted = loadJSON<string[]>('mi-tablero-deleted-people', [])
+    if (!deleted.includes(name)) {
+      localStorage.setItem('mi-tablero-deleted-people', JSON.stringify([...deleted, name]))
+    }
+    const now = new Date().toISOString()
+    setNotes(list =>
+      list.map(n => {
+        if (n.assignee === name) {
+          const newAssignee = reassignTo ? reassignTo : ''
+          enqueue('updateNote', n.id, toSheet({ assignee: newAssignee, updatedAt: now }))
+          return { ...n, assignee: reassignTo || undefined, updatedAt: now }
+        }
+        return n
+      })
+    )
+    const meta = peopleList.find(p => p.name.toLowerCase() === name.toLowerCase())
+    if (meta) {
+      enqueue('deletePerson', meta.id, { ACTIVO: false, ACTUALIZADO_EN: now })
+    }
+    if (activeMember === name) {
+      setActiveMember('Todos')
+    }
+    setPersonToRemove(null)
   }
 
   const createNote = (text: string, date?: string, assignee?: string) => {
@@ -363,7 +490,10 @@ export default function App() {
 
   const convertNoteToActivity = (n: Note) => {
     const inferredRole: Role =
-      n.assignee && n.assignee.toLowerCase().includes('melisa') ? 'ANALISTA' : currentUser
+      n.assignee &&
+      (n.assignee.toLowerCase().includes('melisa') || n.assignee.toLowerCase().includes('analista'))
+        ? 'ANALISTA'
+        : currentUser
     setSelectedNote(null)
     setActivityModal({
       open: true,
@@ -782,16 +912,59 @@ export default function App() {
                 const count = notes.filter(
                   n => n.status === 'PENDIENTE' && n.assignee === p
                 ).length
+                const isSelected = activeMember === p
                 return (
-                  <button
-                    className={`workspace-tab-item ${activeMember === p ? 'active' : ''}`}
-                    onClick={() => setActiveMember(p)}
+                  <div
                     key={p}
+                    className={`person-tab-row ${isSelected ? 'active' : ''}`}
                   >
-                    <User size={15} strokeWidth={1.9} />
-                    <span className="workspace-tab-name">{p}</span>
-                    {count > 0 && <span className="workspace-tab-count">{count}</span>}
-                  </button>
+                    <button
+                      type="button"
+                      className="person-tab-btn"
+                      onClick={() => setActiveMember(p)}
+                    >
+                      <User size={15} strokeWidth={1.9} />
+                      <span className="workspace-tab-name">{p}</span>
+                      {count > 0 && <span className="workspace-tab-count">{count}</span>}
+                    </button>
+                    <button
+                      type="button"
+                      className="person-menu-btn"
+                      onClick={e => {
+                        e.stopPropagation()
+                        setPersonMenuOpen(personMenuOpen === p ? null : p)
+                      }}
+                      title={`Opciones de ${p}`}
+                      aria-label={`Opciones de ${p}`}
+                    >
+                      <MoreVertical size={13} strokeWidth={2} />
+                    </button>
+                    {personMenuOpen === p && (
+                      <div className="person-context-menu" ref={personMenuRef}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPersonMenuOpen(null)
+                            handlePromptRenamePerson(p)
+                          }}
+                        >
+                          <Edit3 size={13} />
+                          <span>Renombrar</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => {
+                            setPersonMenuOpen(null)
+                            setPersonToRemove(p)
+                          }}
+                        >
+                          <Trash2 size={13} />
+                          <span>Quitar persona</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )
               })}
             </div>
@@ -1034,6 +1207,17 @@ export default function App() {
           people={people}
           addPerson={addPerson}
           defaultAssignee={activeMember !== 'Todos' ? activeMember : ''}
+        />
+      )}
+
+      {/* MODAL CONFIRMACIÓN QUITAR PERSONA */}
+      {personToRemove && (
+        <RemovePersonModal
+          personName={personToRemove}
+          assignedCount={notes.filter(n => n.assignee === personToRemove).length}
+          otherPeople={people.filter(p => p !== personToRemove)}
+          onConfirm={reassignTo => removePerson(personToRemove, reassignTo)}
+          onCancel={() => setPersonToRemove(null)}
         />
       )}
 
@@ -1409,6 +1593,135 @@ function QuickPalette({
         <div className="palette-footer">
           <button className="closepal" onClick={close}>
             Cerrar Esc
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RemovePersonModal({
+  personName,
+  assignedCount,
+  otherPeople,
+  onConfirm,
+  onCancel
+}: {
+  personName: string
+  assignedCount: number
+  otherPeople: string[]
+  onConfirm: (reassignTo?: string) => void
+  onCancel: () => void
+}) {
+  const [reassignTarget, setReassignTarget] = useState<string>('')
+
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div
+        className="modal modal-compact"
+        onClick={e => e.stopPropagation()}
+        style={{ maxWidth: 440 }}
+      >
+        <div className="modal-header">
+          <div>
+            <span className="modal-tag">PERSONAS</span>
+            <h2 className="modal-title" style={{ fontSize: 16 }}>
+              Quitar a {personName}
+            </h2>
+          </div>
+          <button type="button" className="btn-icon" onClick={onCancel} title="Cerrar">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div
+          className="modal-body"
+          style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}
+        >
+          {assignedCount > 0 ? (
+            <>
+              <p style={{ margin: 0, fontSize: 13.5, color: 'var(--text)' }}>
+                Esta persona tiene{' '}
+                <strong>
+                  {assignedCount} {assignedCount === 1 ? 'nota asignada' : 'notas asignadas'}
+                </strong>{' '}
+                en la Pizarra.
+              </p>
+              <label
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  color: 'var(--text-secondary)'
+                }}
+              >
+                <span>¿Qué deseás hacer con sus notas?</span>
+                <select
+                  value={reassignTarget}
+                  onChange={e => setReassignTarget(e.target.value)}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius-sm, 6px)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface)',
+                    fontSize: 13.5,
+                    color: 'var(--text)'
+                  }}
+                >
+                  <option value="">Dejar sin responsable (visibles en General)</option>
+                  {otherPeople.map(p => (
+                    <option key={p} value={p}>
+                      Reasignar a {p}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : (
+            <p style={{ margin: 0, fontSize: 13.5, color: 'var(--text)' }}>
+              ¿Estás seguro de quitar a <strong>{personName}</strong> del listado de personas?
+            </p>
+          )}
+
+          <div
+            style={{
+              fontSize: 12,
+              color: 'var(--text-muted)',
+              background: 'var(--surface-active, #f8fafc)',
+              padding: '8px 12px',
+              borderRadius: 6,
+              border: '1px solid var(--border-soft)'
+            }}
+          >
+            ℹ️ Las notas nunca se eliminarán de la Pizarra.
+          </div>
+        </div>
+
+        <div
+          className="modal-footer"
+          style={{ padding: '12px 20px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}
+        >
+          <button type="button" className="btn-secondary" onClick={onCancel}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="btn-danger"
+            style={{
+              background: '#ef4444',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 'var(--radius-sm, 6px)',
+              padding: '7px 14px',
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: 'pointer'
+            }}
+            onClick={() => onConfirm(reassignTarget || undefined)}
+          >
+            Quitar persona
           </button>
         </div>
       </div>

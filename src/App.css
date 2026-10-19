@@ -6434,6 +6434,321 @@
   to { transform: rotate(360deg); }
 }
 
+/* ==========================================================================
+   PERSONAS EDITABLES EN BARRA LATERAL (PIZARRA)
+   ========================================================================== */
+.person-tab-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border-radius: var(--radius-sm, 6px);
+  transition: background var(--transition-fast);
+}
+
+.person-tab-row:hover {
+  background: var(--surface-active, #f1f5f9);
+}
+
+.person-tab-row.active {
+  background: var(--surface-active, #eef2ff);
+}
+
+.person-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+
+.person-tab-row.active .person-tab-btn {
+  color: var(--accent, #6366f1);
+  font-weight: 600;
+}
+
+.person-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.person-tab-row:hover .person-menu-btn,
+.person-tab-row.active .person-menu-btn,
+.person-menu-btn:focus-visible {
+  opacity: 1;
+}
+
+.person-menu-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text, #1e293b);
+}
+
+.person-context-menu {
+  position: absolute;
+  top: 100%;
+  right: 4px;
+  z-index: 99;
+  min-width: 160px;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-sm, 6px);
+  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.1));
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: dropdownFadeIn 0.15s ease-out;
+}
+
+.person-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text, #1e293b);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+
+.person-context-menu button:hover {
+  background: var(--surface-active, #f1f5f9);
+}
+
+.person-context-menu button.danger {
+  color: #dc2626;
+}
+
+.person-context-menu button.danger:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* ==========================================================================
+   CALENDARIO MENSUAL ESTÉTICO Y MINIMALISTA
+   ========================================================================== */
+.cal-cell {
+  background: var(--surface, #ffffff);
+  min-height: 110px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  position: relative;
+}
+
+.cal-cell:hover {
+  background: #f8fafc;
+}
+
+/* Diferenciación sutil para fines de semana */
+.cal-cell-weekend {
+  background: #fafbfc;
+}
+
+.cal-cell-weekend .cell-num {
+  color: #94a3b8;
+}
+
+/* Día seleccionado destacado suave en tono violeta armónico */
+.cal-cell-selected {
+  outline: 2px solid #8b5cf6 !important;
+  outline-offset: -2px;
+  background: #f5f3ff !important;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.18) !important;
+}
+
+.cal-cell-selected .cell-num {
+  color: #6d28d9;
+  font-weight: 700;
+}
+
+.cal-cell.now .cell-num {
+  background: #6366f1;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.35);
+}
+
+/* Indicadores discretos en el casillero */
+.cell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.cell-num {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary, #475569);
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.cell-dots-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mini-dot {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.mini-dot.dot-overdue {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.mini-dot.dot-done {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.cell-count-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #4338ca;
+  background: #e0e7ff;
+  padding: 1px 6px;
+  border-radius: var(--radius-full, 9999px);
+}
+
+/* Fichas compactas y limpias sin saturar la celda */
+.cal-cell-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-cell-chip .chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cal-cell-chip.chip-overdue {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fee2e2;
+}
+
+.cal-cell-chip.chip-overdue .chip-dot {
+  background: #dc2626;
+}
+
+.cal-cell-chip.chip-done {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #dcfce7;
+}
+
+.cal-cell-chip.chip-done .chip-dot {
+  background: #16a34a;
+}
+
+.cal-cell-chip.chip-pending {
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+}
+
+.cal-cell-chip.chip-pending .chip-dot {
+  background: #64748b;
+}
+
+.cal-cell-chip .chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-more {
+  font-size: 10.5px;
+  color: var(--text-muted, #94a3b8);
+  font-weight: 500;
+  padding-left: 2px;
+}
+
+.cal-more-notes {
+  color: #7c3aed;
+}
+
+/* Panel lateral del mes: adaptabilidad y limpieza */
+.month-side-panel {
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-card, 10px);
+  padding: 16px;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.05));
+}
+
+.month-side-panel .exec-group-header {
+  margin-bottom: 14px;
+}
+
+@media (max-width: 900px) {
+  .month-split-layout {
+    grid-template-columns: 1fr;
+  }
+  .cal-cell {
+    min-height: 80px;
+    padding: 6px;
+  }
+  .cal-cell-chip {
+    font-size: 10px;
+    padding: 1px 4px;
+  }
+}
+
+
 
 
 
